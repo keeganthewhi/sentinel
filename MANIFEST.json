@@ -1,0 +1,213 @@
+{
+  "name": "sentinel",
+  "version": "0.1.0",
+  "description": "Self-hosted, open-source security scanning orchestrator that chains seven specialized security tools into a single unified pipeline with an optional AI governor layer.",
+  "archetype": "cli-tool",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keeganthewhi/sentinel.git",
+    "homepage": "https://github.com/keeganthewhi/sentinel",
+    "visibility": "private"
+  },
+  "scannerSources": {
+    "trivy": "https://github.com/aquasecurity/trivy",
+    "semgrep": "https://github.com/semgrep/semgrep",
+    "trufflehog": "https://github.com/trufflesecurity/trufflehog",
+    "subfinder": "https://github.com/projectdiscovery/subfinder",
+    "httpx": "https://github.com/projectdiscovery/httpx",
+    "nuclei": "https://github.com/projectdiscovery/nuclei",
+    "nucleiTemplates": "https://github.com/projectdiscovery/nuclei-templates",
+    "schemathesis": "https://github.com/schemathesis/schemathesis",
+    "nmap": "https://github.com/nmap/nmap",
+    "shannon": {
+      "upstream": "https://github.com/KeygraphHQ/shannon",
+      "fork": "https://github.com/keeganthewhi/shannon-noapi",
+      "useFork": true,
+      "forkRationale": "See docs/adr/README.md ADR-012. Fork removes hosted-API dependency and runs via local governor CLI."
+    }
+  },
+  "stack": {
+    "runtime": "node@22",
+    "language": "typescript@5.6",
+    "framework": "@nestjs/common@11",
+    "queue": "bullmq@5",
+    "database": {
+      "default": "sqlite (via prisma)",
+      "full": "postgresql@16 (via prisma)",
+      "orm": "prisma@5"
+    },
+    "cli": "commander@12",
+    "logging": "pino@9",
+    "validation": "zod@3",
+    "testing": {
+      "unit": "vitest@2",
+      "property": "fast-check@3",
+      "coverage": "@vitest/coverage-v8",
+      "integration": "testcontainers@10",
+      "e2e": "vitest + real docker"
+    },
+    "reporting": {
+      "markdown": "custom template",
+      "json": "JSON.stringify with deterministic key order",
+      "pdf": "pdfmake@0.2"
+    },
+    "container": "docker@24+",
+    "packageManager": "pnpm@9"
+  },
+  "entities": [
+    {
+      "name": "Scan",
+      "description": "Root aggregate for one scan run",
+      "fieldCount": 10,
+      "keyFields": ["id", "status", "targetRepo", "targetUrl", "governed", "blueprintMd"]
+    },
+    {
+      "name": "PhaseRun",
+      "description": "Record of a single scanner execution inside a scan",
+      "fieldCount": 10,
+      "keyFields": ["id", "scanId", "phase", "scanner", "status", "findingCount"]
+    },
+    {
+      "name": "Finding",
+      "description": "Normalized finding after parsing; unique per [scanId, fingerprint]",
+      "fieldCount": 20,
+      "keyFields": ["id", "scanId", "fingerprint", "severity", "scanner", "category", "filePath", "lineNumber", "endpoint"]
+    },
+    {
+      "name": "GovernorDecision",
+      "description": "Auditable record of each governor decision (scan plan / evaluation / report)",
+      "fieldCount": 7,
+      "keyFields": ["id", "scanId", "phase", "decisionType", "inputJson", "outputJson", "rationale"]
+    },
+    {
+      "name": "Report",
+      "description": "Final report artifacts for a scan",
+      "fieldCount": 8,
+      "keyFields": ["id", "scanId", "markdownPath", "jsonPath", "pdfPath", "summary", "aiAuthored"]
+    }
+  ],
+  "scanners": [
+    { "name": "trivy", "phase": 1, "requiresUrl": false, "category": "SCA + secret + IaC", "pinnedVersion": "v0.69.3" },
+    { "name": "semgrep", "phase": 1, "requiresUrl": false, "category": "SAST", "pinnedVersion": "latest" },
+    { "name": "trufflehog", "phase": 1, "requiresUrl": false, "category": "secret", "pinnedVersion": "v3" },
+    { "name": "subfinder", "phase": 1, "requiresUrl": true, "category": "subdomain-discovery", "pinnedVersion": "v2" },
+    { "name": "httpx", "phase": 1, "requiresUrl": true, "category": "http-prober", "pinnedVersion": "latest" },
+    { "name": "nuclei", "phase": 2, "requiresUrl": true, "category": "vuln-scanner", "pinnedVersion": "v3" },
+    { "name": "schemathesis", "phase": 2, "requiresUrl": true, "category": "api-fuzzer", "pinnedVersion": "latest", "requires": "openapi-spec" },
+    { "name": "nmap", "phase": 2, "requiresUrl": true, "category": "port-scanner", "pinnedVersion": "apt" },
+    { "name": "shannon", "phase": 3, "requiresUrl": true, "category": "ai-dast", "pinnedVersion": "n/a", "requires": "governor-cli" }
+  ],
+  "governorCliAdapters": [
+    { "name": "claude", "command": "claude --print", "package": "@anthropic-ai/claude-code" },
+    { "name": "codex", "command": "codex --print", "package": "codex-cli" },
+    { "name": "gemini", "command": "gemini --print", "package": "@google/gemini-cli" }
+  ],
+  "phases": [
+    { "number": 1, "name": "static-analysis-and-recon", "parallelism": "parallel", "scanners": ["trivy", "semgrep", "trufflehog", "subfinder", "httpx"] },
+    { "number": 2, "name": "infrastructure-and-api-testing", "parallelism": "parallel", "scanners": ["nuclei", "schemathesis", "nmap"], "dependsOn": [1] },
+    { "number": 3, "name": "ai-exploitation", "parallelism": "serial-per-target", "scanners": ["shannon"], "dependsOn": [1, 2], "optional": true },
+    { "number": 4, "name": "aggregation-and-report", "parallelism": "n/a", "scanners": [], "dependsOn": [1, 2, 3] }
+  ],
+  "directoryStructure": {
+    "src/": "TypeScript source",
+    "src/common/": "Cross-cutting (logger, errors, utils)",
+    "src/config/": "Zod schema + CLI/YAML/env merging",
+    "src/scanner/": "Scanner registry + contract + per-tool implementations",
+    "src/execution/": "Docker executor + output parsers",
+    "src/pipeline/": "BullMQ orchestration + phases + workers + terminal UI",
+    "src/correlation/": "Fingerprint + dedup + severity normalization",
+    "src/report/": "Markdown / JSON / PDF renderers",
+    "src/persistence/": "Prisma repositories + regression service",
+    "src/governor/": "Optional AI governor (adapter, prompts, plan-gen, evaluator, report-writer)",
+    "src/cli.ts": "Commander entry point",
+    "src/main.ts": "NestJS bootstrap",
+    "docker/scanner.Dockerfile": "Fat scanner image",
+    "prisma/schema.prisma": "Prisma schema",
+    "governor-templates/": "Runtime governor contract + scanner definitions (copied into workspaces/<scanId>/)",
+    "workspaces/": "Per-scan working directories (gitignored)",
+    "data/": "SQLite file + state (gitignored)",
+    "plans/": "Plan files (committed)",
+    "audits/": "Audit reports (committed)",
+    "test/": "Unit + integration + e2e + property tests",
+    "test/fixtures/": "Scanner output fixtures, golden repos, mock server, governor fixtures"
+  },
+  "dependencies": {
+    "runtime": {
+      "@nestjs/common": "^11",
+      "@nestjs/core": "^11",
+      "@nestjs/config": "^3",
+      "reflect-metadata": "^0.2",
+      "rxjs": "^7",
+      "bullmq": "^5",
+      "ioredis": "^5",
+      "@prisma/client": "^5",
+      "commander": "^12",
+      "pino": "^9",
+      "pino-pretty": "^11",
+      "zod": "^3",
+      "fast-xml-parser": "^4",
+      "pdfmake": "^0.2",
+      "ora": "^8"
+    },
+    "development": {
+      "typescript": "^5.6",
+      "@types/node": "^22",
+      "ts-node": "^10",
+      "prisma": "^5",
+      "eslint": "^9",
+      "@typescript-eslint/parser": "^8",
+      "@typescript-eslint/eslint-plugin": "^8",
+      "prettier": "^3",
+      "vitest": "^2",
+      "@vitest/coverage-v8": "^2",
+      "fast-check": "^3",
+      "testcontainers": "^10"
+    }
+  },
+  "environmentVariables": [
+    { "name": "REDIS_URL", "default": "redis://localhost:6379", "description": "BullMQ + Redis connection" },
+    { "name": "DATABASE_URL", "default": "file:./data/sentinel.db", "description": "Prisma connection — SQLite file in lite mode, PostgreSQL URL in full mode" },
+    { "name": "SCANNER_IMAGE", "default": "sentinel-scanner:latest", "description": "Docker image used by DockerExecutor" },
+    { "name": "DATA_DIR", "default": "./data", "description": "Root of the data directory (DB file, workspaces/)" },
+    { "name": "SENTINEL_GOVERNOR_CLI", "default": "claude", "description": "Which governor CLI to invoke when --governed is set (claude | codex | gemini). Set by the sentinel bash bootstrap." },
+    { "name": "NODE_ENV", "default": "development", "description": "Controls pino pretty printing" },
+    { "name": "NO_COLOR", "default": "unset", "description": "Set to disable ANSI output; automatically set to 1 when invoking governor CLIs" }
+  ],
+  "deployment": {
+    "target": "cli-local",
+    "provider": "self-hosted",
+    "distribution": "git clone + ./sentinel",
+    "supportedOs": ["macos-amd64", "macos-arm64", "linux-amd64", "linux-arm64", "wsl2"],
+    "notSupported": ["windows-native", "alpine (no docker)"],
+    "infrastructure": {
+      "container": "docker@24+",
+      "redis": "auto-started via docker run (lite mode) or docker-compose (full mode)",
+      "database": "sqlite file (lite mode) or postgresql container (full mode)"
+    }
+  },
+  "cliCommands": [
+    { "name": "start", "description": "Run a scan", "primary": true, "args": ["--repo <path>"], "flags": ["--url <url>", "--governed", "--shannon", "--phases <n,n>", "--scanners <names>", "--config <path>", "--verbose", "--json"] },
+    { "name": "history", "description": "List past scans", "flags": ["--limit <n>", "--repo <path>", "--json"] },
+    { "name": "report <scan-id>", "description": "Render a saved report", "flags": ["--format <markdown|json|pdf>", "--decisions"] },
+    { "name": "diff <old-id> <new-id>", "description": "Compare two scans", "flags": ["--format <markdown|json|pdf>"] },
+    { "name": "doctor", "description": "Check toolchain readiness" },
+    { "name": "stop", "description": "Stop the Redis container" },
+    { "name": "clean", "description": "Remove Redis, scanner image, data/, workspaces/", "flags": ["--yes"] }
+  ],
+  "qualityTargets": {
+    "coverageOverall": 0.80,
+    "coverageCritical": 0.95,
+    "criticalModules": ["correlation", "governor", "execution"],
+    "phase1WallClockSec": 180,
+    "phase2WallClockSec": 300,
+    "phase3WallClockSec": 1800,
+    "phase4WallClockSec": 10,
+    "memoryPeakGb": 2,
+    "governorQueryP95Sec": 90,
+    "governorHardTimeoutSec": 300,
+    "fingerprintDeterministicIterations": 10000,
+    "correlationOrderIndependentShuffles": 1000
+  },
+  "schemaFile": "MANIFEST.json schema is a snapshot of the governance surface, not a runtime contract. The runtime contract lives in prisma/schema.prisma and src/config/config.schema.ts."
+}

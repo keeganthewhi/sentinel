@@ -1,0 +1,45 @@
+# Sentinel .gitignore — excludes ephemeral state and build artifacts only.
+# Governance (*.md, MANIFEST.json, docs/, governor-templates/, plans/) IS committed.
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+pnpm-debug.log*
+npm-debug.log*
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Runtime state
+data/
+workspaces/
+tools/
+coverage/
+.nyc_output/
+
+# Databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Agent session state (ephemeral, never committed)
+.claude-session.md
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Test artifacts
+*.log
+audits/*.tmp
