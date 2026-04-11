@@ -1,10 +1,10 @@
 ---
-current_phase: "G"
-current_step: "SM-33"
+current_phase: "H"
+current_step: "SM-37"
 total_status_marks: 59
-completed_status_marks: 32
-last_git_sha: "c28129a"
-current_plan_file: "plans/007-correlation-reports.md"
+completed_status_marks: 36
+last_git_sha: "30a4432"
+current_plan_file: "plans/008-persistence.md"
 blockers: []
 ---
 
@@ -342,11 +342,11 @@ After context compaction or new session:
 
 ---
 
-## Phase G — Persistence & Regression `PENDING` (4 SMs)
+## Phase G — Persistence & Regression `COMPLETE` (4 SMs)
 
 ### SM-33: Prisma schema (Scan, PhaseRun, Finding, GovernorDecision, Report)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — Prisma 7 schema with 5 entities, cascade FKs, unique on Finding[scanId,fingerprint], indexes on (scanId,severity/category/scanner)
 - **Acceptance**:
   - Matches `AGF::DatabaseSchema` in AGENTS-full.md
   - Unique constraint on `Finding[scanId, fingerprint]`
@@ -354,7 +354,7 @@ After context compaction or new session:
 
 ### SM-34: Initial migration + provider swap test
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — `prisma/migrations/20260411163536_init/migration.sql` applied to data/sentinel.db; provider swap to PostgreSQL is a one-line schema change
 - **Acceptance**:
   - Migration applies cleanly to empty SQLite
   - Same schema compiles cleanly against PostgreSQL provider
@@ -362,7 +362,7 @@ After context compaction or new session:
 
 ### SM-35: Repositories with transactional writes
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — ScanRepository, FindingRepository, PhaseRunRepository, GovernorDecisionRepository; insertMany wrapped in $transaction; findByFingerprint uses composite key
 - **Acceptance**:
   - Every multi-row write wrapped in `prisma.$transaction()`
   - `ScanRepository`, `FindingRepository`, `GovernorDecisionRepository` implemented
@@ -370,7 +370,7 @@ After context compaction or new session:
 
 ### SM-36: Regression service (diff against previous scan)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — RegressionService.diff classifies new/persisted/fixed; baseline lookup excludes current scan; first-scan returns all-new
 - **Acceptance**:
   - Compares current scan to most recent completed scan for same `targetRepo`
   - Marks `isRegression=true` on new findings
