@@ -113,13 +113,22 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
       targetRepo: repoAbs,
       ...(options.url !== undefined && { targetUrl: options.url }),
     };
-    const markdown = deps.markdown.render(reportInput);
+    // Prefer the governor's AI-authored markdown (if present and validated),
+    // otherwise fall back to the mechanical renderer. JSON always comes from
+    // the mechanical renderer so downstream diff / regression / persistence
+    // paths get a deterministic shape.
+    const markdown = summary.aiAuthoredMarkdown ?? deps.markdown.render(reportInput);
     const jsonReport = deps.json.stringify(reportInput);
 
     const workspaceDir = join(options.workspacesRoot ?? 'workspaces', scanId, 'deliverables');
     mkdirSync(workspaceDir, { recursive: true });
     writeFileSync(join(workspaceDir, 'report.md'), markdown, 'utf8');
     writeFileSync(join(workspaceDir, 'report.json'), jsonReport, 'utf8');
+    writeFileSync(
+      join(workspaceDir, 'governor-decisions.json'),
+      JSON.stringify(summary.governorDecisions, null, 2),
+      'utf8',
+    );
 
     // Print a per-scanner summary so the user can see what actually ran.
     for (const r of summary.scannerResults) {
@@ -131,14 +140,31 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
       );
     }
 
+    // Surface the governor audit trail.
+    if (summary.governorDecisions.length > 0) {
+      for (const decision of summary.governorDecisions) {
+        const tag = decision.fallback ? 'FALLBACK' : 'OK';
+        rootLogger.info(
+          {
+            governor: decision.decisionType,
+            phase: decision.phase,
+            tag,
+            rationale: decision.rationale?.slice(0, 120),
+          },
+          `[governor ${tag}] ${decision.decisionType} (phase ${decision.phase})`,
+        );
+      }
+    }
+
     rootLogger.info(
       {
         scanId,
         findingsCount: normalized.length,
         durationMs: summary.durationMs,
+        aiAuthored: summary.aiAuthoredMarkdown !== undefined,
         reportPath: join(workspaceDir, 'report.md'),
       },
-      `scan complete — ${normalized.length} findings, ${summary.durationMs}ms`,
+      `scan complete — ${normalized.length} findings, ${summary.durationMs}ms${summary.aiAuthoredMarkdown !== undefined ? ' (AI-authored report)' : ''}`,
     );
 
     return normalized.length > 0 ? 1 : 0;

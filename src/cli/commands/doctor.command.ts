@@ -53,7 +53,9 @@ export async function doctorCommand(_options: DoctorOptions = {}): Promise<numbe
     probe('docker', ['--version']),
     probe('pnpm', ['--version']),
     probe('redis-cli', ['ping']),
+    // All four supported governor CLIs — any one of them enables `--governed` mode.
     probe('claude', ['--version']),
+    probe('cursor-agent', ['--version']),
     probe('codex', ['--version']),
     probe('gemini', ['--version']),
   ]);
@@ -65,6 +67,22 @@ export async function doctorCommand(_options: DoctorOptions = {}): Promise<numbe
     const status = probe.available ? 'OK' : 'MISSING';
     const detail = probe.version ?? probe.error ?? '';
     rootLogger.info({ tool: probe.tool, status, detail }, `[${status}] ${probe.tool} ${detail}`);
+  }
+
+  // Summarise which governor CLIs are usable — gives the user a direct answer
+  // to "can I run `--governed` right now?".
+  const governorBins = ['claude', 'cursor-agent', 'codex', 'gemini'];
+  const availableGovernors = probes.filter((p) => governorBins.includes(p.tool) && p.available);
+  if (availableGovernors.length > 0) {
+    rootLogger.info(
+      { available: availableGovernors.map((p) => p.tool) },
+      `[OK] governor: ${availableGovernors.length} CLI(s) available — governed mode ready`,
+    );
+  } else {
+    rootLogger.warn(
+      {},
+      '[WARN] governor: no AI CLI detected (install claude-code / cursor-agent / codex / gemini to enable --governed)',
+    );
   }
 
   if (missing.length > 0) {

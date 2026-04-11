@@ -9,6 +9,7 @@ import { GovernorTimeoutError } from '../common/errors.js';
 function mockAdapter(response: string): AgentAdapter {
   return {
     name: 'claude',
+    bin: 'claude',
     query: vi.fn().mockResolvedValue(response),
   };
 }
@@ -16,6 +17,7 @@ function mockAdapter(response: string): AgentAdapter {
 function failingAdapter(err: Error): AgentAdapter {
   return {
     name: 'claude',
+    bin: 'claude',
     query: vi.fn().mockRejectedValue(err),
   };
 }

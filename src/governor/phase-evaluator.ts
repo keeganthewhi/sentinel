@@ -10,7 +10,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '../common/logger.js';
-import { parseJson } from '../execution/output-parser.js';
+import { extractJsonObject, parseJson } from '../execution/output-parser.js';
 import { buildEvaluationPrompt, type EvaluationInput } from './governor.prompts.js';
 import { EVALUATION_SCHEMA, type EvaluationDecision } from './types/governor-decision.js';
 import type { AgentAdapter } from './agent-adapter.js';
@@ -25,8 +25,7 @@ export class PhaseEvaluator {
     const prompt = buildEvaluationPrompt(input);
     try {
       const response = await this.adapter.query(prompt);
-      const idx = response.indexOf('{');
-      const cleaned = idx >= 0 ? response.slice(idx) : response;
+      const cleaned = extractJsonObject(response);
       const decision = parseJson(cleaned, EVALUATION_SCHEMA, 'governor.phase-evaluator');
       return decision;
     } catch (err) {

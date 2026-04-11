@@ -87,6 +87,53 @@ export function parseJsonLines<S extends z.ZodTypeAny>(
   return results;
 }
 
+/**
+ * Extract the first well-formed JSON object from a string. Scans balanced
+ * braces while respecting string literals (and their escape sequences) so
+ * `{` / `}` inside a quoted value don't throw off the depth counter.
+ *
+ * Used to tolerate agent CLIs that wrap their JSON response in markdown
+ * fences or trail an explanation after the object (Claude does this often).
+ *
+ * Returns the raw input when no `{` is found — the caller's JSON.parse will
+ * then fail with a clear message, which is the desired behavior.
+ */
+export function extractJsonObject(raw: string): string {
+  const start = raw.indexOf('{');
+  if (start < 0) return raw;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return raw.slice(start, i + 1);
+      }
+    }
+  }
+  // Unbalanced braces — return from first `{` to end so the JSON parser
+  // surfaces a clear error including the malformed content.
+  return raw.slice(start);
+}
+
 const xmlParser = new XMLParser({
   attributeNamePrefix: '',
   ignoreAttributes: false,

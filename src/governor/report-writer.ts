@@ -8,7 +8,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '../common/logger.js';
-import { parseJson } from '../execution/output-parser.js';
+import { extractJsonObject, parseJson } from '../execution/output-parser.js';
 import { buildReportPrompt, type ReportInput as PromptReportInput } from './governor.prompts.js';
 import { REPORT_SCHEMA } from './types/governor-decision.js';
 import { MarkdownRenderer, type ReportInput as RendererInput } from '../report/renderers/markdown.renderer.js';
@@ -37,7 +37,7 @@ export class ReportWriter {
     const prompt = buildReportPrompt(request.promptInput);
     try {
       const response = await this.adapter.query(prompt);
-      const cleaned = response.slice(Math.max(0, response.indexOf('{')));
+      const cleaned = extractJsonObject(response);
       const decision = parseJson(cleaned, REPORT_SCHEMA, 'governor.report-writer');
       const validFingerprints = new Set(request.promptInput.findings.map((f) => f.fingerprint));
       const allCitationsValid = decision.citationFingerprints.every((fp) => validFingerprints.has(fp));

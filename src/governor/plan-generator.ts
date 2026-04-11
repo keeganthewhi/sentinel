@@ -12,7 +12,7 @@ import { Injectable } from '@nestjs/common';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createLogger } from '../common/logger.js';
-import { parseJson } from '../execution/output-parser.js';
+import { extractJsonObject, parseJson } from '../execution/output-parser.js';
 import { buildScanPlanPrompt, type ScanPlanInput } from './governor.prompts.js';
 import { SCAN_PLAN_SCHEMA, type ScanPlanDecision } from './types/governor-decision.js';
 import type { AgentAdapter } from './agent-adapter.js';
@@ -44,7 +44,7 @@ export class PlanGenerator {
 
     try {
       const response = await this.adapter.query(prompt);
-      const cleaned = stripPreamble(response);
+      const cleaned = extractJsonObject(response);
       const decision = parseJson(cleaned, SCAN_PLAN_SCHEMA, 'governor.plan-generator');
       this.writeBlueprint(options, decision);
       return decision;
@@ -96,12 +96,3 @@ export class PlanGenerator {
   }
 }
 
-/**
- * Some CLI implementations emit prefix lines (e.g., a session ID, ANSI codes)
- * before the actual JSON. Strip everything up to the first `{`.
- */
-function stripPreamble(raw: string): string {
-  const idx = raw.indexOf('{');
-  if (idx <= 0) return raw;
-  return raw.slice(idx);
-}

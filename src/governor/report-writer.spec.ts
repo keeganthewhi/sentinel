@@ -14,7 +14,7 @@ const ctx: ScanContext = {
 };
 
 function adapter(impl: () => Promise<string>): AgentAdapter {
-  return { name: 'claude', query: vi.fn().mockImplementation(impl) };
+  return { name: 'claude', bin: 'claude', query: vi.fn().mockImplementation(impl) };
 }
 
 function makeFinding(fp: string): NormalizedFinding {
