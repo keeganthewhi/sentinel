@@ -36,6 +36,10 @@ import { SubfinderScanner } from '../scanner/scanners/subfinder.scanner.js';
 import { PlanGenerator } from '../governor/plan-generator.js';
 import { PhaseEvaluator } from '../governor/phase-evaluator.js';
 import { ReportWriter } from '../governor/report-writer.js';
+import {
+  prepareWorkspaceVolume,
+  removeWorkspaceVolume,
+} from '../execution/workspace-volume.js';
 import type {
   ScanContext,
   ScannerResult,
@@ -80,8 +84,66 @@ export class PipelineService {
     const governorDecisions: GovernorDecisionRecord[] = [];
 
     const allResults: ScannerResult[] = [];
-    let allFindings: NormalizedFinding[] = [];
+    const allFindings: NormalizedFinding[] = [];
     let context: ScanContext = options.context;
+
+    // Prepare a per-scan Docker volume populated with the repo contents. Docker
+    // Desktop's 9P bind mount is unusably slow for many-small-file workloads
+    // on Windows — a single bulk copy into a native ext4 volume beats N × 9P
+    // reads per scanner by orders of magnitude. On failure, fall back to the
+    // raw bind mount so scans on non-Windows hosts keep working.
+    let workspaceVolume: string | undefined;
+    if (context.workspaceVolume === undefined) {
+      try {
+        workspaceVolume = await prepareWorkspaceVolume(
+          scanId,
+          context.targetRepo,
+          context.scannerImage,
+        );
+        context = { ...context, workspaceVolume };
+      } catch (err) {
+        this.logger.warn(
+          { scanId, err: (err as Error).message },
+          'workspace volume preparation failed — falling back to 9P bind mount',
+        );
+      }
+    }
+
+    try {
+      return await this.runInner(
+        context,
+        startedAt,
+        activeRunner,
+        selectedPhases,
+        executedPhases,
+        governorDecisions,
+        allResults,
+        allFindings,
+      );
+    } finally {
+      if (workspaceVolume !== undefined) {
+        await removeWorkspaceVolume(workspaceVolume);
+      }
+    }
+  }
+
+  /**
+   * The actual phase orchestration. Split out of `run()` so the workspace
+   * volume lifecycle can wrap it in a try/finally without piling indentation.
+   */
+  private async runInner(
+    contextIn: ScanContext,
+    startedAt: number,
+    activeRunner: IPipelineRunner,
+    selectedPhases: readonly (1 | 2 | 3)[],
+    executedPhases: (1 | 2 | 3)[],
+    governorDecisions: GovernorDecisionRecord[],
+    allResults: ScannerResult[],
+    allFindingsIn: NormalizedFinding[],
+  ): Promise<ScanSummary> {
+    let context: ScanContext = contextIn;
+    let allFindings: NormalizedFinding[] = allFindingsIn;
+    const scanId = context.scanId;
 
     // Hold local references to the governor services so TypeScript narrows
     // them inside the if-blocks below. Direct `this.planGenerator` usage

@@ -13,6 +13,14 @@ import type { NormalizedFinding } from './finding.interface.js';
 export interface ScanContext {
   readonly scanId: string;
   readonly targetRepo: string;
+  /**
+   * When set, scanners mount this named Docker volume at `/workspace:ro`
+   * instead of bind-mounting `targetRepo`. The pipeline populates the volume
+   * once before Phase 1 and removes it after the scan finishes. This avoids
+   * Docker Desktop's slow 9P host filesystem on Windows — scanner I/O hits
+   * a native docker volume instead of the 9P-backed bind mount.
+   */
+  readonly workspaceVolume?: string;
   readonly targetUrl?: string;
   readonly openApiSpec?: string;
   readonly authentication?: AuthConfig;

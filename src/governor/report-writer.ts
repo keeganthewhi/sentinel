@@ -33,10 +33,24 @@ export class ReportWriter {
     private readonly markdownRenderer: MarkdownRenderer,
   ) {}
 
+  /**
+   * Hard ceiling for the final report-writer query. The other three
+   * governor decisions use the default 5-minute AgentAdapter timeout, but
+   * the report writer is the heaviest call — it sees every surviving
+   * finding plus the earlier decisions' rationales, and its output is a
+   * fully-written markdown document instead of a small JSON decision.
+   * On real monorepos (~150 findings) Claude routinely needs more than
+   * 5 minutes; 10 is still a bounded ceiling per Invariant #7 (the
+   * pipeline falls back mechanically on timeout, never blocks).
+   */
+  private static readonly REPORT_WRITER_TIMEOUT_MS = 10 * 60 * 1000;
+
   public async write(request: ReportWriterRequest): Promise<ReportWriterResult> {
     const prompt = buildReportPrompt(request.promptInput);
     try {
-      const response = await this.adapter.query(prompt);
+      const response = await this.adapter.query(prompt, {
+        timeoutMs: ReportWriter.REPORT_WRITER_TIMEOUT_MS,
+      });
       const cleaned = extractJsonObject(response);
       const decision = parseJson(cleaned, REPORT_SCHEMA, 'governor.report-writer');
       const validFingerprints = new Set(request.promptInput.findings.map((f) => f.fingerprint));

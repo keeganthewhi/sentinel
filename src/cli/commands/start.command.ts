@@ -75,7 +75,10 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     targetRepo: repoAbs,
     targetUrl: options.url,
     governed: options.governed ?? false,
-    scannerTimeoutMs: 30 * 60 * 1000,
+    // 45-minute per-scanner budget. Docker Desktop's 9P bind mount on Windows
+    // pushes semgrep wall-clock over 30 min on large monorepos; 45 min gives
+    // enough headroom while still bounding a runaway scanner.
+    scannerTimeoutMs: 45 * 60 * 1000,
     scannerImage: 'sentinel-scanner:latest',
   };
 

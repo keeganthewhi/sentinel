@@ -12,6 +12,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '../common/logger.js';
 import type { Logger } from 'pino';
@@ -19,11 +20,28 @@ import type { Logger } from 'pino';
 export interface DockerRunOptions {
   readonly image: string;
   readonly command: readonly string[];
+  /**
+   * Host path for a 9P bind mount. Exactly ONE of `workspaceRepo` or
+   * `workspaceVolume` should be set — when both are provided, `workspaceVolume`
+   * wins so callers can upgrade from bind-mount to volume transparently.
+   */
   readonly workspaceRepo?: string;
+  /**
+   * Docker named volume. When set, emits `-v <name>:/workspace:ro` instead of a
+   * host bind mount. Used by the pipeline to avoid Docker Desktop 9P overhead
+   * on Windows (see `workspace-volume.ts`).
+   */
+  readonly workspaceVolume?: string;
   readonly timeoutMs: number;
   readonly env?: Readonly<Record<string, string>>;
   /** Optional scanner name for log correlation. */
   readonly scanner?: string;
+  /**
+   * Optional explicit container name. When set, `docker run --name <name>` is
+   * emitted so the executor can `docker kill <name>` on abort. `DockerExecutor.run`
+   * generates one automatically if the caller leaves this undefined.
+   */
+  readonly containerName?: string;
 }
 
 export interface DockerRunResult {
@@ -41,7 +59,15 @@ export interface DockerRunResult {
 export function buildDockerArgs(options: DockerRunOptions): string[] {
   const args: string[] = ['run', '--rm'];
 
-  if (options.workspaceRepo !== undefined) {
+  if (options.containerName !== undefined) {
+    args.push('--name', options.containerName);
+  }
+
+  // Prefer volume over host path when both are set — the volume is faster on
+  // Docker Desktop for Windows and equivalent everywhere else.
+  if (options.workspaceVolume !== undefined) {
+    args.push('-v', `${options.workspaceVolume}:/workspace:ro`);
+  } else if (options.workspaceRepo !== undefined) {
     args.push('-v', `${options.workspaceRepo}:/workspace:ro`);
   }
 
@@ -62,13 +88,28 @@ export class DockerExecutor {
   private readonly logger: Logger = createLogger({ module: 'docker-executor' });
 
   public async run(options: DockerRunOptions): Promise<DockerRunResult> {
-    const args = buildDockerArgs(options);
+    // Always pass --name so we can docker-kill the container on abort.
+    // Aborting the node subprocess only kills the `docker` CLI process —
+    // the dockerd-managed container keeps running until we explicitly kill it.
+    const containerName =
+      options.containerName ??
+      `sentinel-${options.scanner ?? 'run'}-${randomBytes(4).toString('hex')}`;
+    const args = buildDockerArgs({ ...options, containerName });
     const startedAt = Date.now();
 
     return new Promise((resolve) => {
       const controller = new AbortController();
       const timer = setTimeout(() => {
         controller.abort();
+        // Fire-and-forget: kill the daemon-side container so it doesn't keep
+        // eating CPU/disk after we've stopped reading its output.
+        const killer = spawn('docker', ['kill', containerName], {
+          stdio: 'ignore',
+          detached: false,
+        });
+        killer.on('error', () => {
+          // container already gone, or docker CLI unavailable — ignore
+        });
       }, options.timeoutMs);
 
       const child = spawn('docker', args, {
@@ -94,6 +135,7 @@ export class DockerExecutor {
         this.logger.debug(
           {
             scanner: options.scanner,
+            container: containerName,
             exitCode,
             durationMs,
             timedOut,

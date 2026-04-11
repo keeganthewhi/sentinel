@@ -98,17 +98,38 @@ export class TrivyScanner extends BaseScanner {
 
   public async execute(context: ScanContext): Promise<ScannerResult> {
     // Trivy returns exit code 0 even when it finds vulnerabilities (without --exit-code flag).
-    // Skip dirs that explode the scan time on real-world monorepos.
+    // Skip dirs that explode the scan time on real-world monorepos AND the
+    // editor/agent caches (.claude, .cursor, .agent, .playwright-mcp) where
+    // big JSON config files routinely trip Trivy's per-file context deadline.
+    // --timeout 15m caps the overall Trivy run so it can never eat the
+    // full 30-minute scanner budget.
     const command = [
       'trivy',
       'fs',
       '--format',
       'json',
       '--quiet',
+      '--timeout',
+      '15m',
       '--scanners',
       'vuln,secret,misconfig',
       '--skip-dirs',
-      'node_modules,**/node_modules,.next,**/.next,dist,**/dist,coverage,**/coverage,.git',
+      [
+        'node_modules', '**/node_modules',
+        '.next', '**/.next',
+        'dist', '**/dist',
+        'build', '**/build',
+        'coverage', '**/coverage',
+        '.git',
+        '.claude', '**/.claude',
+        '.cursor', '**/.cursor',
+        '.agent', '**/.agent',
+        '.agents', '**/.agents',
+        '.cache', '**/.cache',
+        '.playwright-mcp', '**/.playwright-mcp',
+        '.husky', '**/.husky',
+        '.github', '**/.github',
+      ].join(','),
       '/workspace',
     ];
     const outcome = await runScannerInDocker({

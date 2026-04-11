@@ -100,7 +100,11 @@ export async function runScannerInDocker(options: RunOptions): Promise<RunOutcom
   const runResult = await executor.run({
     image: context.scannerImage,
     command,
-    workspaceRepo: context.targetRepo,
+    // Prefer a pre-populated docker volume (fast on Docker Desktop / Windows)
+    // over the raw 9P bind mount when the pipeline has set one up.
+    ...(context.workspaceVolume !== undefined
+      ? { workspaceVolume: context.workspaceVolume }
+      : { workspaceRepo: context.targetRepo }),
     timeoutMs: timeoutMs ?? context.scannerTimeoutMs,
     scanner: scanner.name,
   });

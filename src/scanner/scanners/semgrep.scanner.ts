@@ -74,7 +74,20 @@ export class SemgrepScanner extends BaseScanner {
 
   public async execute(context: ScanContext): Promise<ScannerResult> {
     // Semgrep exits 0 = no findings, 1 = findings, 2 = error.
-    // --metrics off to suppress phone-home; --quiet to suppress progress noise.
+    //   --metrics off     — suppress phone-home
+    //   --quiet           — suppress progress noise (we parse JSON on stdout)
+    //   --timeout 30      — per-rule wall-clock cap in seconds (semgrep internal)
+    //   --timeout-threshold 3 — bail on files that trip the per-rule timeout 3+ times
+    //   --max-target-bytes 1000000 — skip files > 1 MB (usually minified bundles / snapshots)
+    // The --exclude list mirrors trivy.scanner.ts so large monorepos with
+    // editor/agent caches don't tip the 30-min executor timeout.
+    // Rule pack selection:
+    //   `p/default` is Semgrep's curated meta-pack (~2400 rules). It's the
+    //   highest-signal config and fast enough now that the pipeline mounts a
+    //   pre-populated Docker volume instead of a 9P bind mount. Smaller packs
+    //   like `p/ci`, `p/javascript`, `p/typescript`, and `p/security-audit`
+    //   were tested on this monorepo and produced zero findings for obvious
+    //   issues (eval, hardcoded secrets) — only `p/default` actually fires.
     const command = [
       'semgrep',
       '--config',
@@ -83,14 +96,31 @@ export class SemgrepScanner extends BaseScanner {
       '--quiet',
       '--metrics',
       'off',
-      '--exclude',
-      'node_modules',
-      '--exclude',
-      'dist',
-      '--exclude',
-      '.next',
-      '--exclude',
-      'coverage',
+      '--timeout',
+      '30',
+      '--timeout-threshold',
+      '3',
+      '--max-target-bytes',
+      '1000000',
+      '--exclude', 'node_modules',
+      '--exclude', 'dist',
+      '--exclude', 'build',
+      '--exclude', '.next',
+      '--exclude', 'coverage',
+      '--exclude', '.claude',
+      '--exclude', '.cursor',
+      '--exclude', '.agent',
+      '--exclude', '.agents',
+      '--exclude', '.cache',
+      '--exclude', '.playwright-mcp',
+      '--exclude', '.husky',
+      '--exclude', '.github',
+      '--exclude', '*.min.js',
+      '--exclude', '*.bundle.js',
+      '--exclude', '*.map',
+      '--exclude', 'pnpm-lock.yaml',
+      '--exclude', 'package-lock.json',
+      '--exclude', 'yarn.lock',
       '/workspace',
     ];
     const outcome = await runScannerInDocker({
