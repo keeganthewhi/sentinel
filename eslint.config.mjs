@@ -12,6 +12,7 @@ export default tseslint.config(
       '**/*.d.ts',
       'eslint.config.mjs',
       'vitest.config.ts',
+      'prisma.config.ts',
     ],
   },
   eslint.configs.recommended,

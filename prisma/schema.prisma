@@ -1,0 +1,122 @@
+// Sentinel Prisma schema — matches AGF::DatabaseSchema in AGENTS-full.md.
+//
+// Entities:
+//   - Scan: root aggregate for one scan run
+//   - PhaseRun: one scanner execution inside a scan
+//   - Finding: normalized finding, unique per (scanId, fingerprint)
+//   - GovernorDecision: auditable record of each governor decision
+//   - Report: final report artifacts (paths + summary)
+//
+// Cascade delete: every child cascades from Scan.
+// Unique constraint: Finding[scanId, fingerprint] (Critical Invariant — anti-BOLA, anti-dedup-drift).
+
+// Prisma 7 config note: `url` is no longer declared in the schema.
+// Connection strings for `prisma migrate`/`generate` come from `prisma.config.ts`;
+// the runtime PrismaClient is constructed with an adapter in src/persistence/prisma.client.ts.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Scan {
+  id          String    @id @default(cuid())
+  status      String    @default("PENDING")
+  targetRepo  String
+  targetUrl   String?
+  governed    Boolean   @default(false)
+  blueprintMd String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  phaseRuns PhaseRun[]
+  findings  Finding[]
+  decisions GovernorDecision[]
+  report    Report?
+
+  @@index([targetRepo])
+  @@index([startedAt])
+}
+
+model PhaseRun {
+  id           String    @id @default(cuid())
+  scanId       String
+  phase        Int
+  scanner      String
+  status       String    @default("PENDING")
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  findingCount Int       @default(0)
+  rawOutput    String?
+  errorLog     String?
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId, phase])
+  @@index([scanId, scanner])
+}
+
+model Finding {
+  id              String  @id @default(cuid())
+  scanId          String
+  fingerprint     String
+  title           String
+  description     String
+  severity        String
+  normalizedScore Float   @default(0)
+  scanner         String
+  category        String
+  cveId           String?
+  cweId           String?
+  filePath        String?
+  lineNumber      Int?
+  endpoint        String?
+  evidence        String?
+  exploitProof    String?
+  remediation     String?
+  isDuplicate     Boolean @default(false)
+  correlationId   String?
+  isRegression    Boolean @default(false)
+  governorAction  String?
+  createdAt       DateTime @default(now())
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@unique([scanId, fingerprint])
+  @@index([scanId, severity])
+  @@index([scanId, category])
+  @@index([scanId, scanner])
+}
+
+model GovernorDecision {
+  id           String   @id @default(cuid())
+  scanId       String
+  phase        Int
+  decisionType String
+  inputJson    String
+  outputJson   String?
+  rationale    String?
+  createdAt    DateTime @default(now())
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId, phase])
+  @@index([scanId, decisionType])
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  scanId       String   @unique
+  markdownPath String?
+  jsonPath     String?
+  pdfPath      String?
+  summary      String?
+  aiAuthored   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+}
