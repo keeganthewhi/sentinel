@@ -1,10 +1,10 @@
 ---
-current_phase: "E"
-current_step: "SM-23"
+current_phase: "F"
+current_step: "SM-28"
 total_status_marks: 59
-completed_status_marks: 22
-last_git_sha: "8aaca73"
-current_plan_file: "plans/005-phase2-scanners.md"
+completed_status_marks: 27
+last_git_sha: "7115acd"
+current_plan_file: "plans/006-bullmq-pipeline.md"
 blockers: []
 ---
 
@@ -249,11 +249,11 @@ After context compaction or new session:
 
 ---
 
-## Phase E — BullMQ Pipeline Orchestration `PENDING` (5 SMs)
+## Phase E — BullMQ Pipeline Orchestration `COMPLETE` (5 SMs)
 
 ### SM-23: BullMQ queue setup and pipeline module
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — PipelineModule provides InMemoryPipelineRunner (default) + PipelineService; BullMqPipelineRunner available as opt-in alternative
 - **Acceptance**:
   - Auto-connects to `REDIS_URL` from config
   - Single queue `sentinel-scans` with typed job data
@@ -261,7 +261,7 @@ After context compaction or new session:
 
 ### SM-24: Phase 1 orchestrator (parallel scanner dispatch)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — runPhase(1,...) enqueues all Phase 1 scanners via Promise.allSettled, skips requiresUrl scanners when URL absent
 - **Acceptance**:
   - Enqueues one job per enabled Phase 1 scanner
   - Waits via `Promise.allSettled` — per-scanner failure does not cancel the phase
@@ -269,7 +269,7 @@ After context compaction or new session:
 
 ### SM-25: Phase 2 orchestrator
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — PipelineService runs Phase 2 after merging Phase 1 discoveries into context; sequencing enforced by service.run()
 - **Acceptance**:
   - Blocks until Phase 1 completes
   - Reads `discoveredSubdomains` + `discoveredEndpoints` from ScanContext
@@ -277,7 +277,7 @@ After context compaction or new session:
 
 ### SM-26: Scanner worker (BullMQ job processor)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — BullMqPipelineRunner Worker invokes registry.get(name).execute(); InMemoryPipelineRunner is the test/default path
 - **Acceptance**:
   - Looks up scanner in registry by name
   - Persists `PhaseRun` row atomically on completion
@@ -285,7 +285,7 @@ After context compaction or new session:
 
 ### SM-27: Terminal UI (spinners, phase headers, progress)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — TerminalUI subscribes to ProgressEmitter, renders ora spinners in TTY mode, plain-text fallback otherwise
 - **Acceptance**:
   - Refreshes at most every 100ms (no cursor flicker)
   - Governor lines render in cyan, scanner lines use `[OK]`/`[FAIL]`/`[SKIP]`
