@@ -1,10 +1,10 @@
 ---
-current_phase: "H"
-current_step: "SM-37"
+current_phase: "J"
+current_step: "SM-44"
 total_status_marks: 59
-completed_status_marks: 36
-last_git_sha: "30a4432"
-current_plan_file: "plans/008-persistence.md"
+completed_status_marks: 43
+last_git_sha: "f3c37e7"
+current_plan_file: "plans/010-shannon.md"
 blockers: []
 ---
 
@@ -430,11 +430,11 @@ After context compaction or new session:
 
 ---
 
-## Phase I — Shannon Integration (Phase 3) `PENDING` (2 SMs)
+## Phase I — Shannon Integration (Phase 3) `COMPLETE` (2 SMs)
 
 ### SM-42: Shannon scanner wrapper
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — ShannonScanner extends BaseScanner (phase=3, requiresUrl=true); markdown report parser extracts findings with exploitProof; severity defaults to HIGH per the normalizer rule
 - **Acceptance**:
   - Invokes Shannon via the detected governor CLI
   - Receives `context.governorEscalations` as priority targets
@@ -442,7 +442,7 @@ After context compaction or new session:
 
 ### SM-43: Phase 3 orchestrator (optional, gated by --shannon)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — runPhaseThree skips when no escalations or no Shannon registered; PipelineService.run() invokes it after Phase 2 when phases includes 3
 - **Acceptance**:
   - Only runs when `--shannon` AND at least one escalation exists
   - Skipped cleanly otherwise
