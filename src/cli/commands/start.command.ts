@@ -25,6 +25,8 @@ import { PipelineService } from '../../pipeline/pipeline.service.js';
 import { MarkdownRenderer } from '../../report/renderers/markdown.renderer.js';
 import { JsonRenderer } from '../../report/renderers/json.renderer.js';
 import type { ScanContext } from '../../scanner/types/scanner.interface.js';
+import type { NormalizedFinding } from '../../scanner/types/finding.interface.js';
+import type { ScanSummary } from '../../pipeline/types.js';
 
 export interface StartOptions {
   readonly repo: string;
@@ -156,6 +158,18 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
       }
     }
 
+    // Best-effort SQLite persistence. If better-sqlite3's native binding is
+    // missing (fresh checkout on Windows without MSVC build tools), this is
+    // a no-op — the scan and reports still succeed.
+    await tryPersistScan({
+      scanId,
+      targetRepo: repoAbs,
+      targetUrl: options.url,
+      governed: options.governed === true,
+      findings: normalized,
+      summary,
+    });
+
     rootLogger.info(
       {
         scanId,
@@ -172,6 +186,99 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     const message = err instanceof Error ? err.message : String(err);
     rootLogger.error({ scanId, err: message }, 'scan failed');
     return 1;
+  }
+}
+
+/**
+ * Best-effort SQLite persistence: create a Scan row, insert every finding,
+ * and append the governor decision audit log. Catches every error — including
+ * better-sqlite3 native binding failures — so persistence stays optional and
+ * never blocks the mechanical scan path.
+ */
+interface PersistInput {
+  readonly scanId: string;
+  readonly targetRepo: string;
+  readonly targetUrl?: string;
+  readonly governed: boolean;
+  readonly findings: readonly NormalizedFinding[];
+  readonly summary: ScanSummary;
+}
+
+async function tryPersistScan(input: PersistInput): Promise<void> {
+  try {
+    const { tryCreatePrismaClient } = await import('../../persistence/prisma.client.js');
+    const prisma = tryCreatePrismaClient();
+    if (prisma === null) {
+      // tryCreatePrismaClient already logged the reason.
+      return;
+    }
+
+    const { ScanRepository } = await import('../../persistence/scan.repository.js');
+    const { FindingRepository } = await import('../../persistence/finding.repository.js');
+    const { GovernorDecisionRepository } = await import(
+      '../../persistence/governor-decision.repository.js'
+    );
+
+    const scans = new ScanRepository(prisma);
+    const findings = new FindingRepository(prisma);
+    const decisions = new GovernorDecisionRepository(prisma);
+
+    // Upsert the scan row.
+    // The ID is client-generated (UUID), not prisma-generated cuid, so we use
+    // `scan.upsert` via a raw create + ignore-on-conflict pattern. Prisma
+    // does not auto-upsert by non-@id unique fields, so we create-only here
+    // and accept duplicate scanIds would fail — they won't in practice
+    // because scanIds are UUIDv4.
+    await prisma.scan.create({
+      data: {
+        id: input.scanId,
+        targetRepo: input.targetRepo,
+        targetUrl: input.targetUrl ?? null,
+        governed: input.governed,
+        status: 'COMPLETED',
+        startedAt: new Date(Date.now() - input.summary.durationMs),
+        completedAt: new Date(),
+      },
+    });
+
+    if (input.findings.length > 0) {
+      await findings.insertMany(input.scanId, [...input.findings]);
+    }
+
+    for (const decision of input.summary.governorDecisions) {
+      await decisions.record({
+        scanId: input.scanId,
+        phase: decision.phase,
+        decisionType: decision.decisionType === 'scan_plan'
+          ? 'scan_plan'
+          : decision.decisionType === 'report'
+            ? 'report'
+            : 'evaluation',
+        input: decision.input,
+        output: decision.output,
+        rationale: decision.rationale,
+      });
+    }
+
+    await prisma.$disconnect();
+
+    rootLogger.info(
+      {
+        scanId: input.scanId,
+        findings: input.findings.length,
+        governorDecisions: input.summary.governorDecisions.length,
+      },
+      'persisted scan to sqlite (tolerant)',
+    );
+
+    // Mark unused ScanRepository import — it's here as a logical grouping.
+    void scans;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    rootLogger.warn(
+      { scanId: input.scanId, err: message },
+      'sqlite persistence skipped — scan + reports unaffected',
+    );
   }
 }
 

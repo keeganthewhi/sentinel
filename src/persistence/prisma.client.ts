@@ -1,17 +1,22 @@
 /**
  * PrismaClient construction using the Prisma 7 adapter pattern.
  *
- * In Prisma 7, the datasource URL is no longer in `schema.prisma`. The
- * runtime client is constructed with an adapter (here: better-sqlite3) and
- * pointed at the database file path read from `DATABASE_URL`.
+ * In Prisma 7 the datasource URL is no longer in `schema.prisma`. The runtime
+ * client is constructed with an adapter (here: better-sqlite3) bound to the
+ * DATABASE_URL file path.
  *
- * Test code does NOT instantiate this — repositories take a PrismaClient
- * instance via DI so tests can pass a mock.
+ * Tolerant construction:
+ *   - `better-sqlite3` ships a native binding that must be compiled at
+ *     `pnpm install` time. Fresh Windows checkouts without MSVC build tools,
+ *     or checkouts where `pnpm approve-builds` has not run, will have no
+ *     compiled binding.
+ *   - `tryCreatePrismaClient()` catches the construction error and returns
+ *     null so the start command can run the mechanical pipeline without a DB.
+ *   - `createPrismaClient()` is the strict variant — used when the caller
+ *     genuinely requires persistence.
  *
- * Note: better-sqlite3 ships a native binding that must be compiled at
- * `pnpm install` time. The repo's `pnpm.onlyBuiltDependencies` allow-list
- * includes it; fresh checkouts run `pnpm approve-builds` if the build was
- * skipped (Windows non-admin shells, for example).
+ * Repositories take a PrismaClient via DI so tests can mock it without ever
+ * touching this file.
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -20,15 +25,14 @@ import { createLogger } from '../common/logger.js';
 
 const logger = createLogger({ module: 'persistence.prisma' });
 
-interface CreateOptions {
+export interface CreateOptions {
   readonly databaseUrl?: string;
 }
 
 /**
- * Build a PrismaClient bound to a SQLite database file.
- *
- * `databaseUrl` accepts the standard `file:./data/sentinel.db` form. The
- * `file:` prefix is stripped before being passed to better-sqlite3.
+ * Strict PrismaClient construction. Throws if the better-sqlite3 native
+ * binding is missing. Callers that can operate without persistence should
+ * use `tryCreatePrismaClient()` instead.
  */
 export function createPrismaClient(options: CreateOptions = {}): PrismaClient {
   const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL ?? 'file:./data/sentinel.db';
@@ -37,4 +41,23 @@ export function createPrismaClient(options: CreateOptions = {}): PrismaClient {
 
   const adapter = new PrismaBetterSqlite3({ url: filename });
   return new PrismaClient({ adapter });
+}
+
+/**
+ * Tolerant PrismaClient construction. Returns null when the native binding
+ * is missing or any other construction error occurs. The caller logs a
+ * warning and continues without persistence (mechanical pipeline still works).
+ */
+export function tryCreatePrismaClient(options: CreateOptions = {}): PrismaClient | null {
+  try {
+    return createPrismaClient(options);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(
+      { err: message },
+      'PrismaClient construction failed — scan history and governor-decision persistence disabled. ' +
+        'Run `pnpm install` (or `pnpm approve-builds`) to compile the better-sqlite3 native binding.',
+    );
+    return null;
+  }
 }
