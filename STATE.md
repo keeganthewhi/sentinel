@@ -1,10 +1,10 @@
 ---
-current_phase: "A"
-current_step: "SM-5"
+current_phase: "B"
+current_step: "SM-10"
 total_status_marks: 59
-completed_status_marks: 4
-last_git_sha: "8249412"
-current_plan_file: "plans/001-env-setup.md"
+completed_status_marks: 9
+last_git_sha: "88fb185"
+current_plan_file: "plans/002-scaffolding.md"
 blockers: []
 ---
 
@@ -81,11 +81,11 @@ After context compaction or new session:
 
 ---
 
-## Phase A — Project Scaffolding `PENDING` (5 SMs)
+## Phase A — Project Scaffolding `COMPLETE` (5 SMs)
 
 ### SM-5: `pnpm init` and tsconfig (strict mode)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — package.json (pnpm@10.24.0), tsconfig.json strict/NodeNext/ES2023, tsconfig.build.json for dist
 - **Acceptance**:
   - `package.json` created with name `sentinel`, version `0.1.0`, license `MIT`
   - `tsconfig.json` has `strict: true`, `target: ES2023`, `module: NodeNext`
@@ -93,7 +93,7 @@ After context compaction or new session:
 
 ### SM-6: Install NestJS 11 runtime and dev dependencies
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — 264 packages installed, ESLint 9 flat config, Vitest 2 config, Prettier 3
 - **Acceptance**:
   - `@nestjs/common`, `@nestjs/core`, `@nestjs/config`, `reflect-metadata`, `rxjs` installed
   - Dev deps: `typescript@5.6+`, `vitest`, `@vitest/coverage-v8`, `eslint@9`, `@typescript-eslint/*`, `prettier`
@@ -101,7 +101,7 @@ After context compaction or new session:
 
 ### SM-7: Scaffold `main.ts`, `app.module.ts`, `cli.ts`
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — NestJS `createApplicationContext` bootstrap, empty AppModule wiring ConfigService, Commander stub
 - **Acceptance**:
   - NestJS app boots with `pnpm start`
   - `dist/cli.js` runs via `node dist/cli.js --help` (prints Commander help)
@@ -109,7 +109,7 @@ After context compaction or new session:
 
 ### SM-8: Create pino logger and typed errors module
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — pino logger with redaction paths for authentication.token, rawOutput, evidence.raw, inputJson/outputJson, prompt/response. 7 typed error classes.
 - **Acceptance**:
   - `src/common/logger.ts` emits structured JSON in production, pretty in dev
   - `src/common/errors.ts` exports: `ScannerNotAvailableError`, `ScannerTimeoutError`, `ScannerCrashError`, `GovernorTimeoutError`, `GovernorInvalidResponseError`, `ConfigValidationError`, `DockerNotRunningError`
@@ -117,7 +117,7 @@ After context compaction or new session:
 
 ### SM-9: Create config module (Zod schema + merger)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — ConfigSchema matches AGF::ConfigSchema, ConfigService merges defaults→YAML→env→CLI, 23 tests passing
 - **Acceptance**:
   - `src/config/config.schema.ts` Zod schema merges CLI flags + `sentinel.yaml` + env vars
   - `ConfigService` throws `ConfigValidationError` on malformed input
