@@ -85,9 +85,8 @@ export class SemgrepScanner extends BaseScanner {
     if (raw.trim() === '') return [];
     const data = parseJson(raw, SemgrepOutputSchema, this.name);
     const findings: NormalizedFinding[] = [];
-    const results = data.results ?? [];
 
-    for (const result of results) {
+    for (const result of data.results) {
       const filePath = stripWorkspace(result.path);
       const line = result.start?.line;
       const severity = normalizeSeverity(result.extra?.severity);

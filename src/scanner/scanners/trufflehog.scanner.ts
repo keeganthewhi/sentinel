@@ -86,7 +86,7 @@ export class TruffleHogScanner extends BaseScanner {
       const secretHash = rawSecret.length > 0 ? shortHash(rawSecret) : 'empty';
       const redactedEvidence = `[REDACTED:${secretHash}]`;
 
-      const severity: Severity = record.Verified === true ? 'HIGH' : 'MEDIUM';
+      const severity: Severity = record.Verified ? 'HIGH' : 'MEDIUM';
       const fsMeta = record.SourceMetadata?.Data?.Filesystem;
       const gitMeta = record.SourceMetadata?.Data?.Git;
       const filePath = stripWorkspace(fsMeta?.file ?? gitMeta?.file);
@@ -97,7 +97,7 @@ export class TruffleHogScanner extends BaseScanner {
         scanner: this.name,
         fingerprint: shortHash(`trufflehog:${detector}:${filePath ?? ''}:${lineNumber ?? ''}:${secretHash}`),
         title: `${detector} secret detected`,
-        description: `TruffleHog ${record.Verified === true ? 'verified' : 'unverified'} ${detector} match`,
+        description: `TruffleHog ${record.Verified ? 'verified' : 'unverified'} ${detector} match`,
         severity,
         category: 'secret',
         normalizedScore: 0,

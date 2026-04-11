@@ -28,7 +28,11 @@ export class ParseError extends Error {
 }
 
 /** Parse a single JSON document and validate it against a Zod schema. */
-export function parseJson<T>(raw: string, schema: z.ZodType<T>, scanner?: string): T {
+export function parseJson<S extends z.ZodTypeAny>(
+  raw: string,
+  schema: S,
+  scanner?: string,
+): z.output<S> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
@@ -42,7 +46,7 @@ export function parseJson<T>(raw: string, schema: z.ZodType<T>, scanner?: string
       cause: result.error,
     });
   }
-  return result.data;
+  return result.data as z.output<S>;
 }
 
 /**
@@ -51,8 +55,12 @@ export function parseJson<T>(raw: string, schema: z.ZodType<T>, scanner?: string
  * schema validation throws a ParseError with the failing line index
  * (1-based) for operator diagnosis.
  */
-export function parseJsonLines<T>(raw: string, schema: z.ZodType<T>, scanner?: string): T[] {
-  const results: T[] = [];
+export function parseJsonLines<S extends z.ZodTypeAny>(
+  raw: string,
+  schema: S,
+  scanner?: string,
+): z.output<S>[] {
+  const results: z.output<S>[] = [];
   const lines = raw.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
@@ -74,7 +82,7 @@ export function parseJsonLines<T>(raw: string, schema: z.ZodType<T>, scanner?: s
         { line: i + 1, scanner, cause: validated.error },
       );
     }
-    results.push(validated.data);
+    results.push(validated.data as z.output<S>);
   }
   return results;
 }
