@@ -452,11 +452,11 @@ After context compaction or new session:
 
 ---
 
-## Phase J — CLI & Bootstrap `PENDING` (5 SMs)
+## Phase J — CLI & Bootstrap `COMPLETE` (5 SMs)
 
 ### SM-44: Commander entry (start, history, report, diff, doctor, stop, clean)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — buildProgram() registers 7 subcommands; --help / --version short-circuit; start requires --repo; clean supports --yes; CLI tests verify registration
 - **Acceptance**:
   - `start --repo <path>` end-to-end works
   - Unknown flags rejected with clear error
@@ -464,7 +464,7 @@ After context compaction or new session:
 
 ### SM-45: `sentinel` bash bootstrap script
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — bash-3.2-compatible script verifies Node 22+/pnpm/Docker, manages sentinel-redis container, builds scanner image, runs prisma migrate deploy, conditionally clones shannon-noapi on --shannon, exports runtime env vars
 - **Acceptance**:
   - Works on macOS (bash 3.2+) and Linux
   - Bootstraps Node, Docker, pnpm, Redis, scanner image, Prisma DB
@@ -473,7 +473,7 @@ After context compaction or new session:
 
 ### SM-46: `doctor` command
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — probes node/docker/pnpm/redis-cli/claude/codex/gemini in parallel with 5s timeout; exit 2 if hard dep missing
 - **Acceptance**:
   - Reports versions of node, docker, pnpm, redis, scanner image, governor CLIs
   - Exits non-zero if any hard dependency missing
@@ -481,7 +481,7 @@ After context compaction or new session:
 
 ### SM-47: `history`, `report`, `diff` commands
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — historyCommand reads from ScanRepository; reportCommand renders via Markdown/JsonRenderer; diffCommand computes fingerprint set diff between two scans
 - **Acceptance**:
   - `history` lists past scans with ID, target, findings count
   - `report <id>` renders the saved report (any format)
@@ -489,7 +489,7 @@ After context compaction or new session:
 
 ### SM-48: `stop`, `clean` commands
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — stop runs `docker stop sentinel-redis`; clean wipes redis container + scanner image + data/ + workspaces/, requires --yes confirmation
 - **Acceptance**:
   - `stop` gracefully stops Redis container
   - `clean` removes Redis, scanner image, `data/`, `workspaces/` — prompts for confirmation unless `--yes`
