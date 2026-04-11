@@ -168,6 +168,14 @@ export class PipelineService {
           fallback: planDecision.scanPlan.rationale.includes('mechanical fallback'),
           rationale: planDecision.scanPlan.rationale,
         });
+        // Honour the governor's scanner allow-list. The phase runner skips
+        // any scanner not on this list. The mechanical fallback plan always
+        // emits the full 8-scanner list, so a governor failure never
+        // silently removes scanners from the run.
+        context = {
+          ...context,
+          enabledScannerAllowlist: planDecision.scanPlan.enabledScanners,
+        };
         this.logger.info(
           { scanId, enabled: planDecision.scanPlan.enabledScanners },
           'governor scan plan received',

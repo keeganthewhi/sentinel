@@ -25,6 +25,14 @@ export interface ScanContext {
   readonly openApiSpec?: string;
   readonly authentication?: AuthConfig;
   readonly governed: boolean;
+  /**
+   * Allow-list of scanner names the governor plan-generator decided to run.
+   * When set, the phase runner skips any scanner whose name is not in the
+   * list. Left undefined, all scanners for the phase run (legacy behaviour).
+   * The fallback scan plan always emits the full scanner list so this never
+   * silently kills a mechanical-fallback run.
+   */
+  readonly enabledScannerAllowlist?: readonly string[];
   /** Soft timeout for individual scanner runs, in ms. */
   readonly scannerTimeoutMs: number;
   /** Scanner image tag, pulled from `ConfigService.runtime.scannerImage`. */

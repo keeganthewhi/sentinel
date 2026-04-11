@@ -103,9 +103,14 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
   );
 
   try {
+    // `--shannon` implicitly requests Phase 3. An explicit `--phases` always wins
+    // so users can still opt out (e.g. `--shannon --phases 1,3`).
+    const resolvedPhases: readonly (1 | 2 | 3)[] | undefined =
+      options.phases ?? (options.shannon === true ? [1, 2, 3] : undefined);
+
     const summary = await deps.pipeline.run({
       context,
-      phases: options.phases,
+      phases: resolvedPhases,
     });
 
     const correlated = deps.correlation.correlate(summary.findings);

@@ -36,14 +36,15 @@ export async function runPhase(
 
   const results = await Promise.allSettled(
     allScanners.map(async (scanner) => {
-      if (shouldSkip(scanner, context)) {
+      const skipReason = shouldSkipWithReason(scanner, context);
+      if (skipReason !== null) {
         const skippedResult: ScannerResult = {
           scanner: scanner.name,
           findings: [],
           rawOutput: '',
           executionTimeMs: 0,
           success: true,
-          error: `skipped: requiresUrl=true but targetUrl is absent`,
+          error: `skipped: ${skipReason}`,
         };
         emitter.emit({
           type: 'scanner.end',
@@ -96,9 +97,26 @@ export async function runPhase(
   return scannerResults;
 }
 
-function shouldSkip(scanner: BaseScanner, context: ScanContext): boolean {
-  if (!scanner.requiresUrl) return false;
-  const url = context.targetUrl;
-  if (url === undefined || url.trim() === '') return true;
-  return false;
+/**
+ * Decide whether this scanner should be skipped before it runs, returning a
+ * short human-readable reason or null if it should proceed. The two reasons
+ * a scanner gets skipped:
+ *   1. It requires a target URL but none was provided.
+ *   2. The governor plan-generator produced an enabledScanners allow-list
+ *      and this scanner is not on it.
+ */
+function shouldSkipWithReason(scanner: BaseScanner, context: ScanContext): string | null {
+  if (
+    context.enabledScannerAllowlist !== undefined &&
+    !context.enabledScannerAllowlist.includes(scanner.name)
+  ) {
+    return 'governor plan did not enable this scanner';
+  }
+  if (scanner.requiresUrl) {
+    const url = context.targetUrl;
+    if (url === undefined || url.trim() === '') {
+      return 'requiresUrl=true but targetUrl is absent';
+    }
+  }
+  return null;
 }
