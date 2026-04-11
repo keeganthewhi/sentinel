@@ -1,10 +1,10 @@
 ---
-current_phase: "C"
-current_step: "SM-15"
+current_phase: "E"
+current_step: "SM-23"
 total_status_marks: 59
-completed_status_marks: 14
-last_git_sha: "a8bdb23"
-current_plan_file: "plans/003-scanner-abstractions.md"
+completed_status_marks: 22
+last_git_sha: "8aaca73"
+current_plan_file: "plans/005-phase2-scanners.md"
 blockers: []
 ---
 
@@ -174,11 +174,11 @@ After context compaction or new session:
 
 ---
 
-## Phase C — Phase 1 Scanners `PENDING` (5 SMs)
+## Phase C — Phase 1 Scanners `COMPLETE` (5 SMs)
 
 ### SM-15: Trivy scanner (SCA + secret + IaC)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — parser handles Results:null; vuln→dependency, secret→secret, misconfig→iac; severity UNKNOWN→INFO
 - **Acceptance**:
   - Parser handles `"Results": null` (empty repo) without error
   - Fixture test: known-vulnerable `package.json` → ≥ 1 finding with CVE ID
@@ -186,7 +186,7 @@ After context compaction or new session:
 
 ### SM-16: Semgrep scanner (SAST)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — passthrough for 1.x/2.x schema drift; metavars NOT stored in evidence; ERROR→HIGH WARNING→MEDIUM INFO→LOW
 - **Acceptance**:
   - Parser handles Semgrep 1.x and 2.x schemas defensively
   - Fixture test: SQL injection pattern → ≥ 1 finding with file:line
@@ -194,7 +194,7 @@ After context compaction or new session:
 
 ### SM-17: TruffleHog scanner (secrets)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — JSONL parser with blank-line tolerance; Raw redacted to [REDACTED:<shortHash>] at parse time; Verified=true→HIGH
 - **Acceptance**:
   - JSON lines parser tolerates blank lines between records
   - Severity: HIGH if `Verified == true`, MEDIUM otherwise
@@ -202,7 +202,7 @@ After context compaction or new session:
 
 ### SM-18: Subfinder scanner (subdomain discovery)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — no findings emitted; collectSubdomains helper deduplicates hostnames; skips cleanly when targetUrl undefined
 - **Acceptance**:
   - Only runs when `context.targetUrl` is set
   - Output populates `context.discoveredSubdomains`, not `findings`
@@ -210,7 +210,7 @@ After context compaction or new session:
 
 ### SM-19: httpx scanner (HTTP prober)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — no findings emitted; collectEndpoints helper maps url/statusCode/technologies; skips cleanly when no hosts available
 - **Acceptance**:
   - Reads hosts from `context.discoveredSubdomains`
   - Output populates `context.discoveredEndpoints` with URL + status_code + technologies
@@ -220,11 +220,11 @@ After context compaction or new session:
 
 ---
 
-## Phase D — Phase 2 Scanners `PENDING` (3 SMs)
+## Phase D — Phase 2 Scanners `COMPLETE` (3 SMs)
 
 ### SM-20: Nuclei scanner (template-based vuln)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — JSONL parser, severity map (lowercase→enum), endpoint from matched-at, CVE/CWE classification extracted
 - **Acceptance**:
   - Respects rate_limit from context — does not override governor-set value
   - Parser handles progress output on stderr without treating as error
@@ -232,14 +232,14 @@ After context compaction or new session:
 
 ### SM-21: Schemathesis scanner (API fuzzer)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — JUnit XML parser handles nested + flat testsuite envelopes, toArray() normalizes single-element vs array cases, skips when openApiSpec undefined
 - **Acceptance**:
   - Skipped cleanly with logged reason when `context.openApiSpec` is absent
   - JUnit XML parser extracts failures into findings with endpoint field
 
 ### SM-22: Nmap scanner (port scan + service fingerprint)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — nmap XML parser via fast-xml-parser, handles single-host and multi-host, only open ports become findings with endpoint=<ip>:<proto>/<port>
 - **Acceptance**:
   - XML parser uses `fast-xml-parser` with `attributeNamePrefix: ""`
   - Findings carry open ports as `endpoint` field
