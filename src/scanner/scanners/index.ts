@@ -3,9 +3,15 @@ export * from './semgrep.scanner.js';
 export * from './trufflehog.scanner.js';
 export * from './subfinder.scanner.js';
 export * from './httpx.scanner.js';
+export * from './nuclei.scanner.js';
+export * from './schemathesis.scanner.js';
+export * from './nmap.scanner.js';
 export * from './fingerprint.helper.js';
 
 import { HttpxScanner } from './httpx.scanner.js';
+import { NmapScanner } from './nmap.scanner.js';
+import { NucleiScanner } from './nuclei.scanner.js';
+import { SchemathesisScanner } from './schemathesis.scanner.js';
 import { SemgrepScanner } from './semgrep.scanner.js';
 import { SubfinderScanner } from './subfinder.scanner.js';
 import { TrivyScanner } from './trivy.scanner.js';
@@ -22,4 +28,11 @@ export const PHASE1_SCANNERS: readonly BaseScanner[] = [
   new TruffleHogScanner(),
   new SubfinderScanner(),
   new HttpxScanner(),
+];
+
+/** Instantiated Phase-2 scanners in canonical registration order. */
+export const PHASE2_SCANNERS: readonly BaseScanner[] = [
+  new NucleiScanner(),
+  new SchemathesisScanner(),
+  new NmapScanner(),
 ];
