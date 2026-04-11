@@ -1,10 +1,10 @@
 ---
-current_phase: "B"
-current_step: "SM-10"
+current_phase: "C"
+current_step: "SM-15"
 total_status_marks: 59
-completed_status_marks: 9
-last_git_sha: "88fb185"
-current_plan_file: "plans/002-scaffolding.md"
+completed_status_marks: 14
+last_git_sha: "a8bdb23"
+current_plan_file: "plans/003-scanner-abstractions.md"
 blockers: []
 ---
 
@@ -127,11 +127,11 @@ After context compaction or new session:
 
 ---
 
-## Phase B — Scanner Abstractions & Docker Executor `PENDING` (5 SMs)
+## Phase B — Scanner Abstractions & Docker Executor `COMPLETE` (5 SMs)
 
 ### SM-10: Create `NormalizedFinding` + severity types
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — finding.interface.ts with Severity literal union, FindingCategory, NormalizedFinding readonly interface, SEVERITY_ORDER frozen map
 - **Acceptance**:
   - `src/scanner/types/finding.interface.ts` exports `NormalizedFinding` with all fields from the spec
   - Severity is literal union `'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'`
@@ -139,7 +139,7 @@ After context compaction or new session:
 
 ### SM-11: Create `BaseScanner` abstract class
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — BaseScanner abstract with name/phase/requiresUrl abstracts + execute/parseOutput/isAvailable abstract methods; ScanContext + ScannerResult exported
 - **Acceptance**:
   - Abstract class with `name`, `phase`, `requiresUrl`, `execute(ctx)`, `parseOutput(raw)`, `isAvailable()`
   - Cannot be instantiated directly (tsc error)
@@ -147,7 +147,7 @@ After context compaction or new session:
 
 ### SM-12: Implement `DockerExecutor` with timeout
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — @Injectable DockerExecutor, argv-array via buildDockerArgs helper, AbortController timeout, --rm + ro workspace mount, never throws
 - **Acceptance**:
   - `docker run --rm -v <repo>:/workspace:ro sentinel-scanner:latest <cmd>` spawns via argv array (no shell)
   - Timeout enforced with `AbortController` + `child_process.spawn`
@@ -156,7 +156,7 @@ After context compaction or new session:
 
 ### SM-13: Create `output-parser.ts` helpers (JSON / JSONL / XML)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — parseJson/parseJsonLines with Zod validation, ParseError with line index, parseXml via fast-xml-parser with attributeNamePrefix=''
 - **Acceptance**:
   - `parseJson(raw)` throws `ParseError` on invalid input
   - `parseJsonLines(raw)` skips blank lines, throws with line index on invalid
@@ -164,7 +164,7 @@ After context compaction or new session:
 
 ### SM-14: Create scanner registry
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — @Injectable ScannerRegistry with register/get/all/forPhase; insertion-order stable; duplicate-name guard; clear() helper for tests
 - **Acceptance**:
   - `ScannerRegistry.register(scanner)`, `get(name)`, `all()`, `forPhase(n)` implemented
   - Empty registry returns `[]`, not error
