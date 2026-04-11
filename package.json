@@ -1,6 +1,6 @@
 {
   "name": "sentinel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unified Application Security Testing Platform — self-hosted security scanner orchestrator with optional AI governor",
   "license": "MIT",
   "type": "module",

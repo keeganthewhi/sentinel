@@ -2,7 +2,7 @@
 
 > **Unified Application Security Testing Platform** — a self-hosted, open-source security scanning orchestrator that chains seven specialized security tools through a mechanical BullMQ pipeline with an optional AI governor layer.
 
-[![Status](https://img.shields.io/badge/status-v0.1.0-blue)](https://github.com/keeganthewhi/sentinel/releases/tag/v0.1.0)
+[![Status](https://img.shields.io/badge/status-v0.1.1-blue)](https://github.com/keeganthewhi/sentinel/releases/tag/v0.1.1)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
@@ -15,7 +15,15 @@ cd sentinel
 ./sentinel start --repo /path/to/your/code
 ```
 
-That's it. The bash bootstrap script handles Docker, Redis, the scanner image, and the Prisma database. The first run takes a few minutes while the scanner image builds; subsequent runs are seconds.
+That's it. The bash bootstrap script handles `pnpm install`, Docker, Redis, the scanner image build, Prisma client generation, and database migration. The first run takes a few minutes (scanner image + nuclei templates); subsequent runs are seconds.
+
+To enable the AI governor layer, pass `--governed`:
+
+```bash
+./sentinel start --repo /path/to/your/code --governed
+```
+
+Sentinel auto-detects the first available AI CLI on your PATH in this order: **Claude Code → Cursor → Codex → Gemini**. Override with `SENTINEL_GOVERNOR_CLI=cursor` (or any of the four) if you want a specific vendor.
 
 ## What Sentinel Is
 
@@ -55,12 +63,16 @@ A mechanical correlation engine deduplicates findings across scanners and a seve
 ```
 
 - AI governor enabled via `--governed`
-- Selects scanners based on repo type
-- Cross-scanner correlation
-- AI-authored final report with file:line citations
-- Falls back to mechanical path on any AI failure
+- **Vendor-agnostic**: works with Claude Code, Cursor, Codex, or Gemini — whichever CLI is on your PATH
+- Four governor decisions per scan:
+  1. **Scan plan** (before Phase 1) — AI reads the repo digest + package.json, writes a per-scan BLUEPRINT.md
+  2. **Phase 1 evaluation** — AI reads static-scan findings, decides what to escalate / discard / re-severity
+  3. **Phase 2 evaluation** — AI reads dynamic-scan findings, same pattern
+  4. **Report writer** (end of scan) — AI authors the final markdown with fingerprint-verified citations
+- Every governor failure falls back to the mechanical path automatically — the scan never blocks on AI
+- Full audit trail in `workspaces/<scan-id>/deliverables/governor-decisions.json`
 
-Adding `--shannon` enables the optional Phase 3 exploitation step against governor-escalated targets.
+Adding `--shannon` enables the optional Phase 3 exploitation step against governor-escalated targets (requires an authenticated AI CLI).
 
 ## Commands
 
@@ -139,7 +151,15 @@ pnpm typecheck && pnpm lint && pnpm test
 
 ## Project Status
 
-**v0.1.0** — initial release. Mechanical pipeline + governor layer + Shannon integration all implemented and unit-tested. Integration / E2E / performance / governed-pipeline tests are documented in `audits/REPORT-DEFERRED-TESTS-2026-04-11.md` and run by operators or CI.
+**v0.1.1** — first end-to-end verified release.
+
+- All 8 scanners wired to real DockerExecutor calls and producing real findings (first verified on a 44 MB NestJS monorepo: 41 findings including a HIGH-severity production secret).
+- Governor layer wired into `PipelineService.run()`; `--governed` now actually invokes plan-generator / phase-evaluator / report-writer with mechanical fallback at every step.
+- Four-CLI agent support (Claude Code / Cursor / Codex / Gemini) with auto-detection and Windows `.cmd`-aware spawn.
+- Tolerant SQLite persistence — the mechanical pipeline works even without the `better-sqlite3` native binding (fresh Windows checkouts without MSVC build tools).
+- Clean-clone bootstrap verified in a temp directory: `git clone && cd sentinel && ./sentinel start --repo X` works end-to-end.
+
+Integration / E2E / performance tests are documented in `audits/REPORT-DEFERRED-TESTS-2026-04-11.md` and run by operators or CI.
 
 ## Contributing
 
