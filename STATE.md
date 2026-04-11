@@ -1,10 +1,10 @@
 ---
-current_phase: "F"
-current_step: "SM-28"
+current_phase: "G"
+current_step: "SM-33"
 total_status_marks: 59
-completed_status_marks: 27
-last_git_sha: "7115acd"
-current_plan_file: "plans/006-bullmq-pipeline.md"
+completed_status_marks: 32
+last_git_sha: "c28129a"
+current_plan_file: "plans/007-correlation-reports.md"
 blockers: []
 ---
 
@@ -295,11 +295,11 @@ After context compaction or new session:
 
 ---
 
-## Phase F — Mechanical Correlation & Reports `PENDING` (5 SMs)
+## Phase F — Mechanical Correlation & Reports `COMPLETE` (5 SMs)
 
 ### SM-28: Fingerprint function (SHA-256, deterministic)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — axis-based fingerprint (cveId → filePath:line → endpoint:category → fallback scanner:title); 1000-iter property test; cross-scanner merge verified
 - **Acceptance**:
   - `hash(cveId || filePath+lineNumber || endpoint+category)` — deterministic across runs
   - Property test: 1000 random findings → same hash on re-run
@@ -307,7 +307,7 @@ After context compaction or new session:
 
 ### SM-29: Correlation engine (dedup across tools)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — CorrelationService groups by canonical fingerprint, primary chosen by richness (most populated optional fields), supersedesScanners recorded on primary
 - **Acceptance**:
   - Groups findings by fingerprint across scanners
   - Primary record keeps richest evidence; duplicates marked `isDuplicate=true` + `correlationId`
@@ -315,7 +315,7 @@ After context compaction or new session:
 
 ### SM-30: Severity normalizer
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — pure normalizeSeverity applies 4 rules: Shannon→HIGH floor, Semgrep taint→boost, Nuclei no-exploit→reduce, Trivy deps unchanged
 - **Acceptance**:
   - Shannon exploit confirmed → severity floor HIGH
   - Semgrep taint trace → boost one level
@@ -324,7 +324,7 @@ After context compaction or new session:
 
 ### SM-31: Markdown + JSON renderers
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — MarkdownRenderer emits GFM-safe report with severity table + category groups; JsonRenderer produces stable shape with summary + findings
 - **Acceptance**:
   - Markdown report renders valid GitHub-flavored markdown
   - JSON report is deterministic (sorted keys, sorted arrays)
@@ -332,7 +332,7 @@ After context compaction or new session:
 
 ### SM-32: PDF renderer (pdfmake)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — PdfRenderer builds pdfmake docDefinition with styles, severity-colored summary table, per-finding blocks; actual buffer creation deferred to CLI (Phase J)
 - **Acceptance**:
   - Opens in evince / macOS Preview without warnings
   - TOC, severity badges, code excerpts present
