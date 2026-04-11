@@ -380,11 +380,11 @@ After context compaction or new session:
 
 ---
 
-## Phase H — Governor Layer `PENDING` (5 SMs)
+## Phase H — Governor Layer `COMPLETE` (5 SMs)
 
 ### SM-37: Agent adapter (Claude / Codex / Gemini CLI abstraction)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — AgentAdapter interface with ClaudeCliAdapter / CodexCliAdapter / GeminiCliAdapter; 5-min hard timeout via AbortController; createAgentAdapter() factory reads SENTINEL_GOVERNOR_CLI
 - **Acceptance**:
   - Selects CLI from `SENTINEL_GOVERNOR_CLI` env var
   - 5-minute hard timeout enforced
@@ -393,7 +393,7 @@ After context compaction or new session:
 
 ### SM-38: Governor prompt builders (scan plan / evaluation / report)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — governor.prompts.ts is the SOLE payload constructor (Critical Invariant #6); embeds governor-templates/CLAUDE.md as system layer; deep redact() of any "Raw"/"raw" key; user content delimited by `<<<USER_CONTENT:label>>>` blocks
 - **Acceptance**:
   - Three prompt builders in `governor.prompts.ts`
   - Each prompt embeds `governor-templates/CLAUDE.md` as system layer
@@ -402,7 +402,7 @@ After context compaction or new session:
 
 ### SM-39: Plan generator (Decision 1)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — PlanGenerator queries adapter, validates Zod, writes workspaces/<scanId>/BLUEPRINT.md, falls back to all-scanners-enabled on failure
 - **Acceptance**:
   - Reads file tree + `package.json` mechanically (no AI for the listing)
   - Queries governor, parses response via Zod
@@ -411,7 +411,7 @@ After context compaction or new session:
 
 ### SM-40: Phase evaluator (Decisions 2 + 3)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — PhaseEvaluator returns escalate/discard/adjustSeverity arrays; falls back to no-op evaluation on adapter error or invalid JSON
 - **Acceptance**:
   - Called after Phase 1 and Phase 2
   - Returns `{ escalateToShannon, discardFindings, adjustSeverity, notes }`
@@ -420,7 +420,7 @@ After context compaction or new session:
 
 ### SM-41: Report writer (Decision 4)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — ReportWriter validates citation fingerprints against real findings; falls back to MarkdownRenderer on adapter failure or hallucinated citations
 - **Acceptance**:
   - Receives all findings + all decisions + blueprint
   - Every finding citation verifiable against actual findings (no hallucination)
