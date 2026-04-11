@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { parseJsonLines } from '../../execution/output-parser.js';
+import { parseJsonLines, ParseError } from '../../execution/output-parser.js';
 import { shortHash } from './fingerprint.helper.js';
 import {
   BaseScanner,
@@ -17,6 +17,7 @@ import {
   type ScannerResult,
 } from '../types/scanner.interface.js';
 import type { NormalizedFinding, Severity } from '../types/finding.interface.js';
+import { runScannerInDocker, withFindings } from './runner.helper.js';
 
 const SEVERITY_MAP: Readonly<Record<string, Severity>> = Object.freeze({
   critical: 'CRITICAL',
@@ -72,14 +73,51 @@ export class NucleiScanner extends BaseScanner {
   public readonly phase = 2 as const;
   public readonly requiresUrl = true;
 
-  public async execute(_context: ScanContext): Promise<ScannerResult> {
-    return Promise.resolve({
-      scanner: this.name,
-      findings: [],
-      rawOutput: '',
-      executionTimeMs: 0,
-      success: true,
+  public async execute(context: ScanContext): Promise<ScannerResult> {
+    const targets: string[] = [];
+    if (context.targetUrl !== undefined) targets.push(context.targetUrl);
+    for (const ep of context.discoveredEndpoints ?? []) targets.push(ep);
+    if (targets.length === 0) {
+      return {
+        scanner: this.name,
+        findings: [],
+        rawOutput: '',
+        executionTimeMs: 0,
+        success: true,
+        error: 'skipped: no targets',
+      };
+    }
+    const command: string[] = [
+      'nuclei',
+      '-jsonl',
+      '-silent',
+      '-disable-update-check',
+      // Templates are baked into the scanner image at /opt/nuclei-templates via
+      // a shallow git clone in docker/scanner.Dockerfile. Scoping to http/cves
+      // + http/misconfiguration + http/exposed-panels keeps the scan tractable
+      // on a single URL and matches AGENTS-full.md AGF::NucleiScanner defaults.
+      '-t',
+      '/opt/nuclei-templates/http/cves/',
+      '-t',
+      '/opt/nuclei-templates/http/misconfiguration/',
+      '-t',
+      '/opt/nuclei-templates/http/exposed-panels/',
+    ];
+    for (const t of targets) command.push('-u', t);
+    const outcome = await runScannerInDocker({
+      scanner: this,
+      executor: this.executor,
+      context,
+      command,
     });
+    if (!outcome.ok) return outcome.result;
+    try {
+      const findings = this.parseOutput(outcome.stdout);
+      return withFindings(outcome, findings);
+    } catch (err) {
+      const message = err instanceof ParseError ? err.message : String(err);
+      return { ...outcome.result, success: false, error: `parse failure: ${message}` };
+    }
   }
 
   public parseOutput(raw: string): readonly NormalizedFinding[] {

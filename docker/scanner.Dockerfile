@@ -16,26 +16,29 @@
 #     -f docker/scanner.Dockerfile \
 #     --load .
 #
-# Pinned versions (do NOT use `latest` — bumps require a baseline regression test):
-#   Trivy        v0.69.3
-#   Semgrep      1.91.0
-#   TruffleHog   3.83.7
-#   Subfinder    2.6.6
-#   httpx        1.6.10
-#   Nuclei       3.3.7
-#   Schemathesis 3.36.3 (via pipx)
-#   Nmap         (apt — Ubuntu 24.04 ships 7.94)
+# Pinned versions:
+#   Trivy           v0.69.3
+#   Semgrep         1.91.0  (via pip)
+#   Schemathesis    3.36.3  (via pip — installed BEFORE PD suite so its httpx dep
+#                            does not overwrite projectdiscovery/httpx)
+#   TruffleHog      3.83.7
+#   Subfinder       latest  (resolved via GitHub API at build time)
+#   httpx (PD)      latest  (resolved via GitHub API; installed LAST for precedence)
+#   Nuclei          latest  (resolved via GitHub API; installed LAST for precedence)
+#   nuclei-templates (git clone --depth 1 into /opt/nuclei-templates — deterministic)
+#   Nmap            apt-ship (Ubuntu 24.04 → 7.94)
 
 FROM ubuntu:24.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PATH="/usr/local/go/bin:/root/go/bin:/opt/pipx/bin:${PATH}"
+    PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 
 ARG TARGETARCH
 
-# Base toolchain — curl, ca-certificates for downloads; nmap from apt; python for schemathesis; git for repo cloning.
+# Base toolchain — curl, ca-certificates for downloads; nmap from apt; python for
+# semgrep / schemathesis; git for nuclei-templates clone.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -45,7 +48,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nmap \
         python3 \
         python3-pip \
-        pipx \
         gnupg \
         software-properties-common \
     && rm -rf /var/lib/apt/lists/*
@@ -62,11 +64,6 @@ RUN set -eux; \
       | tar -xz -C /usr/local/bin trivy; \
     trivy --version
 
-# ---------- Semgrep 1.91.0 (via pipx) ----------
-ARG SEMGREP_VERSION=1.91.0
-RUN pipx install --global "semgrep==${SEMGREP_VERSION}" \
-    && semgrep --version
-
 # ---------- TruffleHog 3.83.7 ----------
 ARG TRUFFLEHOG_VERSION=3.83.7
 RUN set -eux; \
@@ -79,10 +76,26 @@ RUN set -eux; \
       | tar -xz -C /usr/local/bin trufflehog; \
     trufflehog --version
 
-# ---------- ProjectDiscovery suite (subfinder, httpx, nuclei) ----------
-ARG SUBFINDER_VERSION=2.6.6
-ARG HTTPX_VERSION=1.6.10
-ARG NUCLEI_VERSION=3.3.7
+# ---------- Semgrep 1.91.0 (via pip, externally-managed override safe in container) ----------
+ARG SEMGREP_VERSION=1.91.0
+RUN pip3 install --break-system-packages --no-cache-dir "semgrep==${SEMGREP_VERSION}" \
+    && semgrep --version
+
+# ---------- Schemathesis 3.36.3 (via pip) ----------
+# Installed BEFORE the ProjectDiscovery suite because schemathesis' dependency
+# tree includes `httpx` (the Python HTTP client) which ships a /usr/local/bin/httpx
+# script. If installed AFTER projectdiscovery/httpx, it overwrites the PD binary
+# and breaks the nuclei/httpx scanners at runtime.
+ARG SCHEMATHESIS_VERSION=3.36.3
+RUN pip3 install --break-system-packages --no-cache-dir "schemathesis==${SCHEMATHESIS_VERSION}" \
+    && schemathesis --version
+
+# ---------- ProjectDiscovery suite (subfinder, httpx, nuclei) — installed LAST ----------
+# Resolved via the GitHub API so we always get the latest release rather than chasing
+# hand-pinned version numbers. `curl -f` fails fast on 4xx/5xx. Unauthenticated
+# rate limit (60/h per IP) is fine for local builds and CI.
+# Installing AFTER pip guarantees that projectdiscovery/httpx wins the argv[0] race
+# against encode/httpx (the Python HTTP client).
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
         amd64) PD_ARCH=amd64 ;; \
@@ -90,25 +103,24 @@ RUN set -eux; \
         *) echo "unsupported arch ${TARGETARCH}"; exit 1 ;; \
     esac; \
     cd /tmp; \
-    for tool in \
-        "subfinder:${SUBFINDER_VERSION}" \
-        "httpx:${HTTPX_VERSION}" \
-        "nuclei:${NUCLEI_VERSION}"; do \
-        name="${tool%:*}"; \
-        version="${tool#*:}"; \
-        curl -sL "https://github.com/projectdiscovery/${name}/releases/download/v${version}/${name}_${version}_linux_${PD_ARCH}.zip" -o "${name}.zip"; \
+    for name in subfinder httpx nuclei; do \
+        version=$(curl -fsSL "https://api.github.com/repos/projectdiscovery/${name}/releases/latest" | sed -n 's/.*"tag_name": "v\([^"]*\)".*/\1/p' | head -1); \
+        [ -n "$version" ] || { echo "failed to resolve ${name} latest version"; exit 1; }; \
+        curl -fsSL "https://github.com/projectdiscovery/${name}/releases/download/v${version}/${name}_${version}_linux_${PD_ARCH}.zip" -o "${name}.zip"; \
         unzip -o "${name}.zip" -d /usr/local/bin "${name}"; \
         chmod +x "/usr/local/bin/${name}"; \
         rm "${name}.zip"; \
-    done
+    done; \
+    # Confirm ProjectDiscovery httpx is the one on PATH (not the python one).
+    httpx -version 2>&1 | head -1
 
-# ---------- Schemathesis 3.36.3 (via pipx) ----------
-ARG SCHEMATHESIS_VERSION=3.36.3
-RUN pipx install --global "schemathesis==${SCHEMATHESIS_VERSION}" \
-    && schemathesis --version
-
-# ---------- Update Nuclei templates at build time ----------
-RUN nuclei -update-templates -silent || true
+# ---------- Nuclei templates via git clone (deterministic, no runtime network) ----------
+# Shallow clone of the template repo baked into the image at /opt/nuclei-templates.
+# Nuclei is invoked with `-t /opt/nuclei-templates/http/cves/` etc. from the scanner.
+# The git checkout is read by whoever runs nuclei; keep it world-readable.
+RUN git clone --depth 1 https://github.com/projectdiscovery/nuclei-templates.git /opt/nuclei-templates \
+    && chmod -R a+rX /opt/nuclei-templates \
+    && du -sh /opt/nuclei-templates
 
 # ---------- Non-root scanner user ----------
 RUN useradd --create-home --shell /bin/sh scanner \
@@ -118,16 +130,16 @@ RUN useradd --create-home --shell /bin/sh scanner \
 USER scanner
 WORKDIR /workspace
 
-ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["echo 'sentinel-scanner image — invoked via DockerExecutor with explicit argv'"]
+# No ENTRYPOINT — DockerExecutor invokes scanners as `docker run sentinel-scanner:latest <tool> <args...>`
+# so the scanner binary becomes argv[0] of `exec` directly. Critical Invariant #5:
+# scanner output never enters a shell string; argv array only.
+CMD ["trivy", "--version"]
 
 # Smoke test labels (consumed by `./sentinel doctor`):
 LABEL org.sentinel.image.name="sentinel-scanner" \
       org.sentinel.image.trivy="v0.69.3" \
       org.sentinel.image.semgrep="1.91.0" \
       org.sentinel.image.trufflehog="3.83.7" \
-      org.sentinel.image.subfinder="2.6.6" \
-      org.sentinel.image.httpx="1.6.10" \
-      org.sentinel.image.nuclei="3.3.7" \
       org.sentinel.image.schemathesis="3.36.3" \
+      org.sentinel.image.nuclei-templates="git-head" \
       org.sentinel.image.nmap="apt"

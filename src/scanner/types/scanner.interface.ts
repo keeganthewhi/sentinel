@@ -6,6 +6,7 @@
  */
 
 import type { AuthConfig } from '../../config/config.schema.js';
+import type { DockerExecutor } from '../../execution/docker.executor.js';
 import type { NormalizedFinding } from './finding.interface.js';
 
 /** Per-scan data that flows through every phase. Mutated only at phase boundaries. */
@@ -46,11 +47,24 @@ export interface ScannerResult {
  * Abstract base class for every scanner. Scanners live in `src/scanner/scanners/`
  * as siblings — no scanner imports another scanner. Cross-scanner logic belongs
  * in `src/correlation/`.
+ *
+ * Each scanner is constructed without a DockerExecutor so the registration array
+ * in `scanners/index.ts` stays declarative. The ScannerModule injects the
+ * DockerExecutor via `setExecutor()` during `onModuleInit`, before any scan runs.
+ * `execute()` reads `this.executor` and skips with a clear error if unset (which
+ * only happens in tests that have not wired the runtime path).
  */
 export abstract class BaseScanner {
   public abstract readonly name: string;
   public abstract readonly phase: 1 | 2 | 3;
   public abstract readonly requiresUrl: boolean;
+
+  protected executor: DockerExecutor | undefined;
+
+  /** Wire the runtime DockerExecutor. Called once by `ScannerModule.onModuleInit`. */
+  public setExecutor(executor: DockerExecutor): void {
+    this.executor = executor;
+  }
 
   /**
    * Run the scanner against the given context. MUST NOT throw for

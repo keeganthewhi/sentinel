@@ -16,6 +16,7 @@ import {
   type ScannerResult,
 } from '../types/scanner.interface.js';
 import type { NormalizedFinding } from '../types/finding.interface.js';
+import { runScannerInDocker } from './runner.helper.js';
 
 const HttpxLineSchema = z
   .object({
@@ -39,25 +40,34 @@ export class HttpxScanner extends BaseScanner {
   public readonly requiresUrl = true;
 
   public async execute(context: ScanContext): Promise<ScannerResult> {
-    if (
-      context.targetUrl === undefined &&
-      (context.discoveredSubdomains === undefined || context.discoveredSubdomains.length === 0)
-    ) {
-      return Promise.resolve({
+    const subs = context.discoveredSubdomains ?? [];
+    const target = context.targetUrl;
+    if (target === undefined && subs.length === 0) {
+      return {
         scanner: this.name,
         findings: [],
         rawOutput: '',
         executionTimeMs: 0,
         success: true,
-      });
+        error: 'skipped: no targetUrl or discovered subdomains',
+      };
     }
-    return Promise.resolve({
-      scanner: this.name,
-      findings: [],
-      rawOutput: '',
-      executionTimeMs: 0,
-      success: true,
+    // httpx accepts -u for a single URL or -l for a hosts file. To avoid mounting a writable file
+    // into the container, we use repeated -u flags. The argv length is bounded by the discovery limit.
+    const command: string[] = ['httpx', '-silent', '-json', '-status-code', '-tech-detect'];
+    if (target !== undefined) {
+      command.push('-u', target);
+    }
+    for (const sub of subs) {
+      command.push('-u', sub);
+    }
+    const outcome = await runScannerInDocker({
+      scanner: this,
+      executor: this.executor,
+      context,
+      command,
     });
+    return outcome.result;
   }
 
   public parseOutput(_raw: string): readonly NormalizedFinding[] {

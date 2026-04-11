@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod';
-import { parseJson } from '../../execution/output-parser.js';
+import { parseJson, ParseError } from '../../execution/output-parser.js';
 import { shortHash } from './fingerprint.helper.js';
 import {
   BaseScanner,
@@ -16,6 +16,7 @@ import {
   type ScannerResult,
 } from '../types/scanner.interface.js';
 import type { NormalizedFinding, Severity } from '../types/finding.interface.js';
+import { runScannerInDocker, withFindings } from './runner.helper.js';
 
 const SEVERITY_MAP: Readonly<Record<string, Severity>> = Object.freeze({
   UNKNOWN: 'INFO',
@@ -95,17 +96,40 @@ export class TrivyScanner extends BaseScanner {
   public readonly phase = 1 as const;
   public readonly requiresUrl = false;
 
-  public async execute(_context: ScanContext): Promise<ScannerResult> {
-    // Real subprocess invocation is wired via DockerExecutor in Phase E (scanner worker).
-    // For now, returning a stub result keeps the module graph buildable; Phase E
-    // replaces this body with a real DockerExecutor.run(...) call.
-    return Promise.resolve({
-      scanner: this.name,
-      findings: [],
-      rawOutput: '',
-      executionTimeMs: 0,
-      success: true,
+  public async execute(context: ScanContext): Promise<ScannerResult> {
+    // Trivy returns exit code 0 even when it finds vulnerabilities (without --exit-code flag).
+    // Skip dirs that explode the scan time on real-world monorepos.
+    const command = [
+      'trivy',
+      'fs',
+      '--format',
+      'json',
+      '--quiet',
+      '--scanners',
+      'vuln,secret,misconfig',
+      '--skip-dirs',
+      'node_modules,**/node_modules,.next,**/.next,dist,**/dist,coverage,**/coverage,.git',
+      '/workspace',
+    ];
+    const outcome = await runScannerInDocker({
+      scanner: this,
+      executor: this.executor,
+      context,
+      command,
     });
+    if (!outcome.ok) return outcome.result;
+
+    try {
+      const findings = this.parseOutput(outcome.stdout);
+      return withFindings(outcome, findings);
+    } catch (err) {
+      const message = err instanceof ParseError ? err.message : String(err);
+      return {
+        ...outcome.result,
+        success: false,
+        error: `parse failure: ${message}`,
+      };
+    }
   }
 
   public parseOutput(raw: string): readonly NormalizedFinding[] {

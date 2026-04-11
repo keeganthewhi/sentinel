@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { parseJson } from '../../execution/output-parser.js';
+import { parseJson, ParseError } from '../../execution/output-parser.js';
 import { shortHash } from './fingerprint.helper.js';
 import {
   BaseScanner,
@@ -17,6 +17,7 @@ import {
   type ScannerResult,
 } from '../types/scanner.interface.js';
 import type { NormalizedFinding, Severity } from '../types/finding.interface.js';
+import { runScannerInDocker, withFindings } from './runner.helper.js';
 
 const SEVERITY_MAP: Readonly<Record<string, Severity>> = Object.freeze({
   ERROR: 'HIGH',
@@ -71,14 +72,47 @@ export class SemgrepScanner extends BaseScanner {
   public readonly phase = 1 as const;
   public readonly requiresUrl = false;
 
-  public async execute(_context: ScanContext): Promise<ScannerResult> {
-    return Promise.resolve({
-      scanner: this.name,
-      findings: [],
-      rawOutput: '',
-      executionTimeMs: 0,
-      success: true,
+  public async execute(context: ScanContext): Promise<ScannerResult> {
+    // Semgrep exits 0 = no findings, 1 = findings, 2 = error.
+    // --metrics off to suppress phone-home; --quiet to suppress progress noise.
+    const command = [
+      'semgrep',
+      '--config',
+      'p/default',
+      '--json',
+      '--quiet',
+      '--metrics',
+      'off',
+      '--exclude',
+      'node_modules',
+      '--exclude',
+      'dist',
+      '--exclude',
+      '.next',
+      '--exclude',
+      'coverage',
+      '/workspace',
+    ];
+    const outcome = await runScannerInDocker({
+      scanner: this,
+      executor: this.executor,
+      context,
+      command,
+      nonZeroIsSuccess: true,
     });
+    if (!outcome.ok) return outcome.result;
+
+    try {
+      const findings = this.parseOutput(outcome.stdout);
+      return withFindings(outcome, findings);
+    } catch (err) {
+      const message = err instanceof ParseError ? err.message : String(err);
+      return {
+        ...outcome.result,
+        success: false,
+        error: `parse failure: ${message}`,
+      };
+    }
   }
 
   public parseOutput(raw: string): readonly NormalizedFinding[] {

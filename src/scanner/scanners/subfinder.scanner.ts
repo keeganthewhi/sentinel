@@ -17,6 +17,15 @@ import {
   type ScannerResult,
 } from '../types/scanner.interface.js';
 import type { NormalizedFinding } from '../types/finding.interface.js';
+import { runScannerInDocker } from './runner.helper.js';
+
+function extractDomain(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
 
 const SubfinderLineSchema = z
   .object({
@@ -32,21 +41,34 @@ export class SubfinderScanner extends BaseScanner {
 
   public async execute(context: ScanContext): Promise<ScannerResult> {
     if (context.targetUrl === undefined || context.targetUrl.trim() === '') {
-      return Promise.resolve({
+      return {
         scanner: this.name,
         findings: [],
         rawOutput: '',
         executionTimeMs: 0,
         success: true,
-      });
+        error: 'skipped: no targetUrl',
+      };
     }
-    return Promise.resolve({
-      scanner: this.name,
-      findings: [],
-      rawOutput: '',
-      executionTimeMs: 0,
-      success: true,
+    const domain = extractDomain(context.targetUrl);
+    if (domain === null) {
+      return {
+        scanner: this.name,
+        findings: [],
+        rawOutput: '',
+        executionTimeMs: 0,
+        success: false,
+        error: `invalid targetUrl: ${context.targetUrl}`,
+      };
+    }
+    const command = ['subfinder', '-silent', '-d', domain, '-json'];
+    const outcome = await runScannerInDocker({
+      scanner: this,
+      executor: this.executor,
+      context,
+      command,
     });
+    return outcome.result;
   }
 
   public parseOutput(_raw: string): readonly NormalizedFinding[] {

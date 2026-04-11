@@ -11,7 +11,7 @@
  * may elevate severity based on exposed services.
  */
 
-import { parseXml } from '../../execution/output-parser.js';
+import { parseXml, ParseError } from '../../execution/output-parser.js';
 import { shortHash } from './fingerprint.helper.js';
 import {
   BaseScanner,
@@ -19,6 +19,15 @@ import {
   type ScannerResult,
 } from '../types/scanner.interface.js';
 import type { NormalizedFinding } from '../types/finding.interface.js';
+import { runScannerInDocker, withFindings } from './runner.helper.js';
+
+function hostFromUrl(value: string): string | null {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return null;
+  }
+}
 
 interface NmapService {
   readonly name?: string;
@@ -71,14 +80,40 @@ export class NmapScanner extends BaseScanner {
   public readonly phase = 2 as const;
   public readonly requiresUrl = true;
 
-  public async execute(_context: ScanContext): Promise<ScannerResult> {
-    return Promise.resolve({
-      scanner: this.name,
-      findings: [],
-      rawOutput: '',
-      executionTimeMs: 0,
-      success: true,
+  public async execute(context: ScanContext): Promise<ScannerResult> {
+    const targets: string[] = [];
+    if (context.targetUrl !== undefined) {
+      const host = hostFromUrl(context.targetUrl);
+      if (host !== null) targets.push(host);
+    }
+    for (const sub of context.discoveredSubdomains ?? []) {
+      targets.push(sub);
+    }
+    if (targets.length === 0) {
+      return {
+        scanner: this.name,
+        findings: [],
+        rawOutput: '',
+        executionTimeMs: 0,
+        success: true,
+        error: 'skipped: no hostnames to scan',
+      };
+    }
+    const command = ['nmap', '-sV', '--top-ports', '1000', '-oX', '-', ...targets];
+    const outcome = await runScannerInDocker({
+      scanner: this,
+      executor: this.executor,
+      context,
+      command,
     });
+    if (!outcome.ok) return outcome.result;
+    try {
+      const findings = this.parseOutput(outcome.stdout);
+      return withFindings(outcome, findings);
+    } catch (err) {
+      const message = err instanceof ParseError ? err.message : String(err);
+      return { ...outcome.result, success: false, error: `parse failure: ${message}` };
+    }
   }
 
   public parseOutput(raw: string): readonly NormalizedFinding[] {

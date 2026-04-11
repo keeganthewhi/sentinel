@@ -22,7 +22,7 @@ import { rootLogger } from './common/logger.js';
 import { doctorCommand } from './cli/commands/doctor.command.js';
 import { stopCommand } from './cli/commands/stop.command.js';
 import { cleanCommand } from './cli/commands/clean.command.js';
-import { parsePhasesFlag } from './cli/commands/start.command.js';
+import { parsePhasesFlag, runStartCommand } from './cli/commands/start.command.js';
 
 const VERSION = '0.1.0';
 
@@ -67,20 +67,18 @@ export function buildProgram(): Command {
     .option('--shannon', 'enable Phase 3 (Shannon DAST)', false)
     .option('--phases <list>', 'comma-separated phase numbers (e.g. 1,2 or 1,2,3)')
     .option('--verbose', 'verbose logging', false)
-    .action((flags: StartCliFlags) => {
+    .action(async (flags: StartCliFlags) => {
       try {
         const phases = parsePhasesFlag(flags.phases);
-        rootLogger.info(
-          {
-            repo: flags.repo,
-            url: flags.url,
-            governed: flags.governed === true,
-            shannon: flags.shannon === true,
-            phases,
-          },
-          'sentinel start invoked — full pipeline runs after bash bootstrap',
-        );
-        process.exitCode = 0;
+        const code = await runStartCommand({
+          repo: flags.repo,
+          url: flags.url,
+          governed: flags.governed === true,
+          shannon: flags.shannon === true,
+          phases,
+          verbose: flags.verbose === true,
+        });
+        process.exitCode = code;
       } catch (err) {
         rootLogger.error({ err: (err as Error).message }, 'invalid arguments');
         process.exitCode = 3;

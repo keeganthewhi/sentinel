@@ -10,7 +10,7 @@
  * normalizes both cases via `toArray()`.
  */
 
-import { parseXml } from '../../execution/output-parser.js';
+import { parseXml, ParseError } from '../../execution/output-parser.js';
 import { shortHash } from './fingerprint.helper.js';
 import {
   BaseScanner,
@@ -18,6 +18,7 @@ import {
   type ScannerResult,
 } from '../types/scanner.interface.js';
 import type { NormalizedFinding } from '../types/finding.interface.js';
+import { runScannerInDocker, withFindings } from './runner.helper.js';
 
 interface JUnitFailure {
   readonly message?: string;
@@ -69,22 +70,43 @@ export class SchemathesisScanner extends BaseScanner {
   public readonly requiresUrl = true;
 
   public async execute(context: ScanContext): Promise<ScannerResult> {
-    if (context.openApiSpec === undefined) {
-      return Promise.resolve({
+    if (context.openApiSpec === undefined || context.targetUrl === undefined) {
+      return {
         scanner: this.name,
         findings: [],
         rawOutput: '',
         executionTimeMs: 0,
         success: true,
-      });
+        error: 'skipped: requires openApiSpec + targetUrl',
+      };
     }
-    return Promise.resolve({
-      scanner: this.name,
-      findings: [],
-      rawOutput: '',
-      executionTimeMs: 0,
-      success: true,
+    // Schemathesis exits non-zero when checks fail; we want the JUnit XML either way.
+    const command = [
+      'schemathesis',
+      'run',
+      '--base-url',
+      context.targetUrl,
+      context.openApiSpec,
+      '--checks',
+      'all',
+      '--junit-xml',
+      '-',
+    ];
+    const outcome = await runScannerInDocker({
+      scanner: this,
+      executor: this.executor,
+      context,
+      command,
+      nonZeroIsSuccess: true,
     });
+    if (!outcome.ok) return outcome.result;
+    try {
+      const findings = this.parseOutput(outcome.stdout);
+      return withFindings(outcome, findings);
+    } catch (err) {
+      const message = err instanceof ParseError ? err.message : String(err);
+      return { ...outcome.result, success: false, error: `parse failure: ${message}` };
+    }
   }
 
   public parseOutput(raw: string): readonly NormalizedFinding[] {
