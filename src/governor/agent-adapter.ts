@@ -137,6 +137,18 @@ async function runCli(
       stderrChunks.push(chunk);
     });
 
+    // Stdin errors are emitted asynchronously — the child can die mid-write
+    // (CLI rejects argv, API quota exhausted, bad flag) and Node will
+    // otherwise surface an unhandled 'error' event on the stream and crash
+    // the whole Node process. Swallow it here; the `close` / `error` handler
+    // below will report the real underlying failure from the child.
+    child.stdin.on('error', (err: NodeJS.ErrnoException) => {
+      logger.debug(
+        { bin: config.bin, code: err.code, err: err.message },
+        'agent-adapter stdin write failed — child likely exited early',
+      );
+    });
+
     // Feed the prompt through stdin.
     try {
       child.stdin.write(prompt);
@@ -252,10 +264,14 @@ export class GeminiCliAdapter implements AgentAdapter {
   public readonly name = 'gemini' as const;
   public readonly bin = 'gemini';
   public query(prompt: string, options: AgentQueryOptions = {}): Promise<string> {
-    // gemini CLI accepts the prompt via stdin when `-p` is passed without an
-    // inline value.
+    // Google's @google/gemini-cli rejects `-p` when it is passed without an
+    // inline value ("Not enough arguments following: p"), even though the
+    // other three CLIs accept that pattern for stdin input. Invoking
+    // `gemini` with no flags and piping the prompt via stdin works: the
+    // CLI detects a non-TTY stdin and runs non-interactively — we get a
+    // single streamed response on stdout, then it exits.
     return runCli(
-      { bin: this.bin, buildArgs: (_unused) => ['-p'] },
+      { bin: this.bin, buildArgs: (_unused) => [] },
       prompt,
       options,
     );
