@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
-# sentinel — bootstrap script that prepares the host and delegates to dist/cli.js.
+# sentinel — one-command bootstrap that prepares the host and runs Sentinel.
+#
+# North Star UX:
+#   git clone https://github.com/keeganthewhi/sentinel.git
+#   cd sentinel
+#   ./sentinel start --repo /path/to/your/code
 #
 # Bash 3.2+ compatible (no `[[ var =~ ... ]]` requiring 4+, no associative arrays).
-# Run from the repo root: `./sentinel start --repo /path/to/code`
+# Run from the repo root.
 #
 # Order of operations (each step is fail-fast):
 #   1. Verify Node 22+, pnpm 9+, Docker
-#   2. Detect WSL and rewrite /mnt/c paths for Docker bind mounts
-#   3. Start the sentinel-redis container if not running
-#   4. Build the scanner image if not present
-#   5. Apply Prisma migrations (`prisma migrate deploy`)
-#   6. Conditionally clone shannon-noapi when --shannon is in argv
-#   7. Export runtime env vars and exec node dist/cli.js "$@"
+#   2. Run `pnpm install` if node_modules is missing (postinstall also runs
+#      `prisma generate` so the @prisma/client types get materialised).
+#   3. Build TypeScript if dist/cli.js is missing
+#   4. Detect WSL and note path rewriting
+#   5. Start the sentinel-redis container if not running
+#   6. Build the scanner image if not present
+#   7. Apply Prisma migrations (`prisma migrate deploy`) — tolerant
+#   8. Conditionally clone shannon-noapi when --shannon is in argv
+#   9. Export runtime env vars and exec node dist/cli.js "$@"
 
 set -e
 set -u
@@ -46,12 +54,24 @@ fi
 # Verify Docker daemon is reachable.
 docker info >/dev/null 2>&1 || err "Docker daemon is not running. Start Docker Desktop or 'sudo systemctl start docker'." 2
 
-# 2. WSL path rewriting (Windows host running Docker Desktop with WSL2 backend)
+# 2. Install node dependencies if missing (postinstall hook runs prisma generate)
+if [ ! -d node_modules ]; then
+  info "Installing node dependencies (first run) — runs prisma generate via postinstall"
+  pnpm install
+fi
+
+# 3. Build TypeScript if dist/ is stale
+if [ ! -f dist/cli.js ]; then
+  info "Building TypeScript (dist/cli.js missing)"
+  pnpm build
+fi
+
+# 4. WSL path rewriting (Windows host running Docker Desktop with WSL2 backend)
 if grep -qi microsoft /proc/version 2>/dev/null; then
   info "WSL detected — Docker bind mounts will use Windows-style paths"
 fi
 
-# 3. Redis container
+# 5. Redis container
 if ! docker ps --format '{{.Names}}' | grep -q "^${REDIS_CONTAINER}$"; then
   if docker ps -a --format '{{.Names}}' | grep -q "^${REDIS_CONTAINER}$"; then
     info "Starting existing ${REDIS_CONTAINER} container"
@@ -62,7 +82,7 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${REDIS_CONTAINER}$"; then
   fi
 fi
 
-# 4. Scanner image
+# 6. Scanner image
 if ! docker image inspect "$SCANNER_IMAGE" >/dev/null 2>&1; then
   if [ -f docker/scanner.Dockerfile ]; then
     info "Building scanner image (this may take a few minutes on first run)"
@@ -72,13 +92,13 @@ if ! docker image inspect "$SCANNER_IMAGE" >/dev/null 2>&1; then
   fi
 fi
 
-# 5. Prisma migrate (idempotent)
+# 7. Prisma migrate (idempotent, tolerant)
 mkdir -p "$DATA_DIR"
 if [ -d node_modules ]; then
-  DATABASE_URL="$DATABASE_URL" pnpm exec prisma migrate deploy --schema prisma/schema.prisma >/dev/null 2>&1 || true
+  DATABASE_URL="$DATABASE_URL" pnpm exec prisma migrate deploy >/dev/null 2>&1 || true
 fi
 
-# 6. Optional Shannon clone
+# 8. Optional Shannon clone
 case " $* " in
   *" --shannon "*)
     if [ ! -d "$SHANNON_DIR" ]; then
@@ -89,18 +109,16 @@ case " $* " in
     ;;
 esac
 
-# 7. Build TypeScript if dist/ is stale
-if [ ! -f dist/cli.js ]; then
-  info "Building TypeScript (dist/cli.js missing)"
-  pnpm build >/dev/null
-fi
-
-# Export runtime env
+# 9. Export runtime env
 export REDIS_URL="redis://127.0.0.1:6379"
 export DATABASE_URL
 export SCANNER_IMAGE
 export DATA_DIR
 export SHANNON_DIR
-export SENTINEL_GOVERNOR_CLI="${SENTINEL_GOVERNOR_CLI:-claude}"
+# Respect the user's SENTINEL_GOVERNOR_CLI if set, otherwise let the adapter
+# auto-detect claude / cursor-agent / codex / gemini on PATH.
+if [ -n "${SENTINEL_GOVERNOR_CLI:-}" ]; then
+  export SENTINEL_GOVERNOR_CLI
+fi
 
 exec node dist/cli.js "$@"

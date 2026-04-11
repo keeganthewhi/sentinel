@@ -13,6 +13,7 @@
     "sentinel": "dist/cli.js"
   },
   "scripts": {
+    "postinstall": "prisma generate || echo 'prisma generate failed — run manually if persistence is needed'",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
