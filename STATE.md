@@ -1,10 +1,10 @@
 ---
-current_phase: "0"
-current_step: "SM-1"
+current_phase: "A"
+current_step: "SM-5"
 total_status_marks: 59
-completed_status_marks: 0
-last_git_sha: ""
-current_plan_file: ""
+completed_status_marks: 4
+last_git_sha: "8249412"
+current_plan_file: "plans/001-env-setup.md"
 blockers: []
 ---
 
@@ -41,11 +41,11 @@ After context compaction or new session:
 
 ---
 
-## Phase 0 — Environment Setup `PENDING` (4 SMs)
+## Phase 0 — Environment Setup `COMPLETE` (4 SMs)
 
 ### SM-1: Verify host prerequisites (Node 22+, Docker, pnpm 9+, gh CLI)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — node v24.14.1, docker 29.3.1 running, pnpm 10.24.0, gh 2.89.0 authed as keeganthewhi with `repo` scope
 - **Acceptance**:
   - `node -v` ≥ v22.0.0
   - `docker info` succeeds without error
@@ -54,7 +54,7 @@ After context compaction or new session:
 
 ### SM-2: Install toolchain (corepack + pnpm)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — pnpm 10.24.0 already installed standalone; corepack activation blocked by Windows EPERM (non-admin shell), not required. See plans/001-env-setup.md Important Findings.
 - **Acceptance**:
   - `corepack enable` succeeds
   - `corepack prepare pnpm@latest --activate` succeeds
@@ -62,7 +62,7 @@ After context compaction or new session:
 
 ### SM-3: Initialize Git + create GitHub remote
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — commit 8249412 pushed to https://github.com/keeganthewhi/sentinel (private), default branch main
 - **Acceptance**:
   - `git status` works in the repo root
   - `.gitignore` excludes `node_modules/`, `dist/`, `data/`, `workspaces/`, `tools/`, `.claude-session.md`, `.env`, `*.db`, `coverage/`
@@ -72,7 +72,7 @@ After context compaction or new session:
 
 ### SM-4: Install optional governor CLIs (Claude Code / Codex / Gemini)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — all three CLIs present on PATH (claude, codex, gemini under %AppData%\Roaming\npm\)
 - **Acceptance**:
   - At least one of `claude`, `codex`, `gemini` is on PATH, OR
   - The plan file documents an N/A reason (e.g., mechanical-only workflow)

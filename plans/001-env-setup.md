@@ -1,9 +1,10 @@
 # Plan 001 — Phase 0 Environment Setup
 
 > **Created**: 2026-04-11
-> **Status**: IN_PROGRESS
+> **Status**: COMPLETE
 > **Status Mark**: SM-1 .. SM-4 (Phase 0)
 > **Git SHA (start)**: — (repo not yet initialized)
+> **Git SHA (end)**: 8249412 (initial governance commit) + follow-up bookkeeping commit
 > **Depends on**: N/A — first plan
 
 ## Cold Start
