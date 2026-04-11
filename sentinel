@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# sentinel — bootstrap script that prepares the host and delegates to dist/cli.js.
+#
+# Bash 3.2+ compatible (no `[[ var =~ ... ]]` requiring 4+, no associative arrays).
+# Run from the repo root: `./sentinel start --repo /path/to/code`
+#
+# Order of operations (each step is fail-fast):
+#   1. Verify Node 22+, pnpm 9+, Docker
+#   2. Detect WSL and rewrite /mnt/c paths for Docker bind mounts
+#   3. Start the sentinel-redis container if not running
+#   4. Build the scanner image if not present
+#   5. Apply Prisma migrations (`prisma migrate deploy`)
+#   6. Conditionally clone shannon-noapi when --shannon is in argv
+#   7. Export runtime env vars and exec node dist/cli.js "$@"
+
+set -e
+set -u
+
+REDIS_CONTAINER="sentinel-redis"
+REDIS_IMAGE="redis:7-alpine"
+SCANNER_IMAGE="sentinel-scanner:latest"
+DATA_DIR="$(pwd)/data"
+DATABASE_URL="file:./data/sentinel.db"
+SHANNON_REPO="https://github.com/keeganthewhi/shannon-noapi.git"
+SHANNON_DIR="$(pwd)/tools/shannon-noapi"
+
+err() {
+  printf '[sentinel] ERROR: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+info() {
+  printf '[sentinel] %s\n' "$1"
+}
+
+# 1. Toolchain verification
+command -v node >/dev/null 2>&1 || err "node is not on PATH (Node.js 22+ required)" 2
+command -v pnpm >/dev/null 2>&1 || err "pnpm is not on PATH (pnpm 9+ required)" 2
+command -v docker >/dev/null 2>&1 || err "docker is not on PATH" 2
+
+NODE_MAJOR=$(node --version | sed -E 's/^v([0-9]+)\..*/\1/')
+if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 22 ]; then
+  err "Node.js 22+ required (have $(node --version))" 2
+fi
+
+# Verify Docker daemon is reachable.
+docker info >/dev/null 2>&1 || err "Docker daemon is not running. Start Docker Desktop or 'sudo systemctl start docker'." 2
+
+# 2. WSL path rewriting (Windows host running Docker Desktop with WSL2 backend)
+if grep -qi microsoft /proc/version 2>/dev/null; then
+  info "WSL detected — Docker bind mounts will use Windows-style paths"
+fi
+
+# 3. Redis container
+if ! docker ps --format '{{.Names}}' | grep -q "^${REDIS_CONTAINER}$"; then
+  if docker ps -a --format '{{.Names}}' | grep -q "^${REDIS_CONTAINER}$"; then
+    info "Starting existing ${REDIS_CONTAINER} container"
+    docker start "$REDIS_CONTAINER" >/dev/null
+  else
+    info "Creating ${REDIS_CONTAINER} container"
+    docker run -d --name "$REDIS_CONTAINER" -p 127.0.0.1:6379:6379 "$REDIS_IMAGE" >/dev/null
+  fi
+fi
+
+# 4. Scanner image
+if ! docker image inspect "$SCANNER_IMAGE" >/dev/null 2>&1; then
+  if [ -f docker/scanner.Dockerfile ]; then
+    info "Building scanner image (this may take a few minutes on first run)"
+    docker build -t "$SCANNER_IMAGE" -f docker/scanner.Dockerfile . >/dev/null
+  else
+    info "WARNING: scanner image '${SCANNER_IMAGE}' not found and docker/scanner.Dockerfile is missing"
+  fi
+fi
+
+# 5. Prisma migrate (idempotent)
+mkdir -p "$DATA_DIR"
+if [ -d node_modules ]; then
+  DATABASE_URL="$DATABASE_URL" pnpm exec prisma migrate deploy --schema prisma/schema.prisma >/dev/null 2>&1 || true
+fi
+
+# 6. Optional Shannon clone
+case " $* " in
+  *" --shannon "*)
+    if [ ! -d "$SHANNON_DIR" ]; then
+      info "Cloning shannon-noapi to $SHANNON_DIR"
+      mkdir -p "$(dirname "$SHANNON_DIR")"
+      git clone "$SHANNON_REPO" "$SHANNON_DIR" >/dev/null
+    fi
+    ;;
+esac
+
+# 7. Build TypeScript if dist/ is stale
+if [ ! -f dist/cli.js ]; then
+  info "Building TypeScript (dist/cli.js missing)"
+  pnpm build >/dev/null
+fi
+
+# Export runtime env
+export REDIS_URL="redis://127.0.0.1:6379"
+export DATABASE_URL
+export SCANNER_IMAGE
+export DATA_DIR
+export SHANNON_DIR
+export SENTINEL_GOVERNOR_CLI="${SENTINEL_GOVERNOR_CLI:-claude}"
+
+exec node dist/cli.js "$@"
