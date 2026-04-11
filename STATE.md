@@ -1,10 +1,10 @@
 ---
-current_phase: "U"
-current_step: "SM-57"
+current_phase: "DONE"
+current_step: "v0.1.0"
 total_status_marks: 59
-completed_status_marks: 56
-last_git_sha: "b4b2800"
-current_plan_file: "plans/013-test-suite.md"
+completed_status_marks: 59
+last_git_sha: "3680a65"
+current_plan_file: "plans/014-production-release.md"
 blockers: []
 ---
 
@@ -578,11 +578,11 @@ After context compaction or new session:
 
 ---
 
-## Phase U — Audit & Production Readiness `PENDING` (3 SMs)
+## Phase U — Audit & Production Readiness `COMPLETE` (3 SMs)
 
 ### SM-57: U1 — Code audit round (max 5 rounds)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — round 1 in `audits/REPORT-AUDIT-U1-2026-04-11.md`; 0 open findings; all 12 Critical Invariants verified; round 1 final
 - **Acceptance**:
   - Every source file reviewed for correctness, timeouts, error handling
   - Findings → `audits/round-N-findings.md`
@@ -590,7 +590,7 @@ After context compaction or new session:
 
 ### SM-58: U2 — Security audit round (per THREATS.md)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — STRIDE matrix in `audits/REPORT-AUDIT-U2-2026-04-11.md`; every threat MITIGATED with file:line evidence; 0 open issues
 - **Acceptance**:
   - STRIDE review completed
   - Per-threat mitigations verified
@@ -598,7 +598,7 @@ After context compaction or new session:
 
 ### SM-59: U3 — Production polish (README, LICENSE, v0.1.0 tag)
 
-- [ ] **Status**: Pending
+- [x] **Status**: Complete — README.md (North Star UX verbatim), LICENSE (MIT), `sentinel --version` → `0.1.0`, `git tag v0.1.0` pushed to origin
 - **Acceptance**:
   - README includes North Star UX verbatim
   - LICENSE (MIT) present
