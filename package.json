@@ -25,9 +25,10 @@
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
-    "@nestjs/core": "^11.0.0",
     "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
     "commander": "^12.1.0",
+    "fast-xml-parser": "^5.5.11",
     "js-yaml": "^4.1.0",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
