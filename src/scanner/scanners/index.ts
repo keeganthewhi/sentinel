@@ -6,6 +6,7 @@ export * from './httpx.scanner.js';
 export * from './nuclei.scanner.js';
 export * from './schemathesis.scanner.js';
 export * from './nmap.scanner.js';
+export * from './shannon.scanner.js';
 export * from './fingerprint.helper.js';
 
 import { HttpxScanner } from './httpx.scanner.js';
@@ -13,6 +14,7 @@ import { NmapScanner } from './nmap.scanner.js';
 import { NucleiScanner } from './nuclei.scanner.js';
 import { SchemathesisScanner } from './schemathesis.scanner.js';
 import { SemgrepScanner } from './semgrep.scanner.js';
+import { ShannonScanner } from './shannon.scanner.js';
 import { SubfinderScanner } from './subfinder.scanner.js';
 import { TrivyScanner } from './trivy.scanner.js';
 import { TruffleHogScanner } from './trufflehog.scanner.js';
@@ -36,3 +38,6 @@ export const PHASE2_SCANNERS: readonly BaseScanner[] = [
   new SchemathesisScanner(),
   new NmapScanner(),
 ];
+
+/** Instantiated Phase-3 scanners (Shannon DAST). */
+export const PHASE3_SCANNERS: readonly BaseScanner[] = [new ShannonScanner()];

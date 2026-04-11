@@ -14,6 +14,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { runPhase } from './phases/phase-runner.js';
+import { runPhaseThree } from './phases/phase-three-exploit.js';
 import { InMemoryPipelineRunner } from './in-memory.runner.js';
 import { ScannerRegistry } from '../scanner/scanner.registry.js';
 import { ProgressEmitter } from '../report/progress/progress.emitter.js';
@@ -70,6 +71,15 @@ export class PipelineService {
       allResults.push(...phase2Results);
       for (const r of phase2Results) allFindings.push(...r.findings);
       executedPhases.push(2);
+    }
+
+    // Phase 3 (optional, gated by --shannon AND non-empty governorEscalations)
+    if (selectedPhases.includes(3)) {
+      const phase3Context: ScanContext = { ...context, phase2Findings: [...allFindings] };
+      const phase3Results = await runPhaseThree(this.registry, activeRunner, phase3Context, this.emitter);
+      allResults.push(...phase3Results);
+      for (const r of phase3Results) allFindings.push(...r.findings);
+      if (phase3Results.length > 0) executedPhases.push(3);
     }
 
     const durationMs = Date.now() - startedAt;

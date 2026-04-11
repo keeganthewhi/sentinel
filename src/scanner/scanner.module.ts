@@ -1,6 +1,6 @@
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { ExecutionModule } from '../execution/execution.module.js';
-import { PHASE1_SCANNERS, PHASE2_SCANNERS } from './scanners/index.js';
+import { PHASE1_SCANNERS, PHASE2_SCANNERS, PHASE3_SCANNERS } from './scanners/index.js';
 import { ScannerRegistry } from './scanner.registry.js';
 
 @Module({
@@ -16,6 +16,9 @@ export class ScannerModule implements OnModuleInit {
       this.registry.register(scanner);
     }
     for (const scanner of PHASE2_SCANNERS) {
+      this.registry.register(scanner);
+    }
+    for (const scanner of PHASE3_SCANNERS) {
       this.registry.register(scanner);
     }
   }
