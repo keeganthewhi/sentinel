@@ -82,6 +82,30 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${REDIS_CONTAINER}$"; then
   fi
 fi
 
+# 5b. Temporal container (needed by Shannon in --governed mode).
+#     Shannon's CLI internally calls `docker compose up -d` to start
+#     Temporal, but it runs inside a subprocess with a whitelisted env
+#     that may not have all the vars docker compose needs. Starting
+#     Temporal here (from the full host env) is more reliable.
+if ! docker ps --format '{{.Names}}' | grep -q '^shannon-temporal$'; then
+  if docker ps -a --format '{{.Names}}' | grep -q '^shannon-temporal$'; then
+    info "Starting existing shannon-temporal container"
+    docker start shannon-temporal >/dev/null
+  else
+    info "Starting Temporal for Shannon (first --governed run)"
+    if [ -d "$SHANNON_DIR" ] && [ -f "$SHANNON_DIR/docker-compose.yml" ]; then
+      (cd "$SHANNON_DIR" && docker compose up -d temporal >/dev/null 2>&1) || true
+    fi
+  fi
+  # Wait for Temporal to be healthy (up to 60s)
+  for i in $(seq 1 30); do
+    if docker exec shannon-temporal temporal operator cluster health --address localhost:7233 2>/dev/null | grep -q SERVING; then
+      break
+    fi
+    sleep 2
+  done
+fi
+
 # 6. Scanner image
 if ! docker image inspect "$SCANNER_IMAGE" >/dev/null 2>&1; then
   if [ -f docker/scanner.Dockerfile ]; then
