@@ -163,13 +163,16 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     const jsonReport = deps.json.stringify(reportInput);
 
     const workspaceDir = join(options.workspacesRoot ?? 'workspaces', scanId, 'deliverables');
-    mkdirSync(workspaceDir, { recursive: true });
-    writeFileSync(join(workspaceDir, 'report.md'), markdown, 'utf8');
-    writeFileSync(join(workspaceDir, 'report.json'), jsonReport, 'utf8');
+    mkdirSync(workspaceDir, { recursive: true, mode: 0o700 });
+    // Deliverables contain full finding details, CVE IDs, governor AI
+    // responses, and potentially sensitive file paths. Restrict to
+    // owner-read/write only (0o600) so other host users can't access them.
+    writeFileSync(join(workspaceDir, 'report.md'), markdown, { encoding: 'utf8', mode: 0o600 });
+    writeFileSync(join(workspaceDir, 'report.json'), jsonReport, { encoding: 'utf8', mode: 0o600 });
     writeFileSync(
       join(workspaceDir, 'governor-decisions.json'),
       JSON.stringify(summary.governorDecisions, null, 2),
-      'utf8',
+      { encoding: 'utf8', mode: 0o600 },
     );
 
     // Print a per-scanner summary so the user can see what actually ran.

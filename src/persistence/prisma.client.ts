@@ -19,6 +19,8 @@
  * touching this file.
  */
 
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
 import { createLogger } from '../common/logger.js';
@@ -39,8 +41,26 @@ export function createPrismaClient(options: CreateOptions = {}): PrismaClient {
   const filename = databaseUrl.replace(/^file:/, '');
   logger.debug({ filename }, 'constructing PrismaClient via better-sqlite3 adapter');
 
+  // Ensure data directory exists with restrictive permissions. The database
+  // contains all scan findings (including severity/CVE data), governor AI
+  // responses, and audit metadata — world-readable is unacceptable.
+  const dir = dirname(filename);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+
   const adapter = new PrismaBetterSqlite3({ url: filename });
-  return new PrismaClient({ adapter });
+  const client = new PrismaClient({ adapter });
+
+  // Restrict database file permissions after creation (better-sqlite3
+  // creates with default umask, typically 0644 = world-readable).
+  try {
+    chmodSync(filename, 0o600);
+  } catch {
+    // File may not exist yet if this is first migration run.
+  }
+
+  return client;
 }
 
 /**

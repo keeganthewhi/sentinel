@@ -83,9 +83,24 @@ export function buildDockerArgs(options: DockerRunOptions): string[] {
     args.push('--name', options.containerName);
   }
 
-  // Per-container resource limits — defaults apply unless caller passes
-  // an empty string to explicitly disable. Keeps a runaway scanner from
-  // eating the host's entire memory or CPU budget.
+  // Container hardening — defense in depth.
+  //   --security-opt=no-new-privileges — prevents privilege escalation via
+  //     setuid/setgid binaries inside the container.
+  //   --cap-drop=ALL — (applied from the caller if needed) drops all Linux
+  //     capabilities by default.
+  //   --memory / --cpus — per-container resource caps (defaults below).
+  //
+  // NOTE: --read-only is NOT used for scanner containers. Scanners require
+  // writable filesystem for their own cache/config:
+  //   - Trivy: ~/.cache/trivy/db/ (vulnerability DB downloaded on first run)
+  //   - Semgrep: ~/.semgrep/ (rule cache, metrics)
+  //   - Nuclei: ~/.config/nuclei/ (template metadata)
+  // The workspace volume is already mounted :ro, which is the important
+  // protection (scanners can't modify the target repo). The other
+  // hardening flags (no-new-privileges, cap-drop, resource limits) bound
+  // the blast radius if a scanner is compromised.
+  args.push('--security-opt=no-new-privileges');
+
   const memory = options.memoryLimit ?? DEFAULT_MEMORY_LIMIT;
   if (memory !== '') {
     args.push(`--memory=${memory}`);
@@ -149,13 +164,35 @@ export class DockerExecutor {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
+      // Hard cap on buffered output to prevent OOM from a runaway scanner.
+      // 50 MB is generous for any structured output (trivy JSON, semgrep JSON,
+      // nuclei JSONL, nmap XML) while still preventing a malicious scanner
+      // from crashing the Node process with multi-GB output.
+      const MAX_BUFFER_BYTES = 50 * 1024 * 1024;
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
+      let stdoutSize = 0;
+      let stderrSize = 0;
+      let bufferOverflow = false;
 
       child.stdout.on('data', (chunk: Buffer) => {
+        stdoutSize += chunk.length;
+        if (stdoutSize > MAX_BUFFER_BYTES) {
+          if (!bufferOverflow) {
+            bufferOverflow = true;
+            this.logger.warn(
+              { scanner: options.scanner, container: containerName, bytes: stdoutSize },
+              'scanner stdout exceeded 50 MB buffer limit — killing container',
+            );
+            child.kill('SIGTERM');
+          }
+          return;
+        }
         stdoutChunks.push(chunk);
       });
       child.stderr.on('data', (chunk: Buffer) => {
+        stderrSize += chunk.length;
+        if (stderrSize > MAX_BUFFER_BYTES) return; // silently drop excess stderr
         stderrChunks.push(chunk);
       });
 

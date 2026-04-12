@@ -205,7 +205,10 @@ export async function prepareWorkspaceVolume(
   repoAbs: string,
   scannerImage: string,
 ): Promise<string> {
-  const volumeName = `sentinel-ws-${scanId.slice(0, 8)}-${Date.now().toString(36)}`;
+  // Use the full scanId (already a UUID, guaranteed unique) to prevent
+  // volume name collisions between fast successive scans. The previous
+  // scanId.slice(0,8)+Date.now() approach could collide within the same ms.
+  const volumeName = `sentinel-ws-${scanId}`;
   const stagingName = `${volumeName}-staging`;
 
   // 1. Create an empty named volume.

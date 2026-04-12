@@ -8,11 +8,12 @@ describe('buildDockerArgs', () => {
       command: ['trivy', 'fs', '/workspace'],
       timeoutMs: 30000,
     });
-    // Default --memory and --cpus are always included unless explicitly
-    // disabled; resource caps are on-by-default.
+    // Default hardening (--security-opt) and resource caps (--memory, --cpus)
+    // are always included unless explicitly disabled.
     expect(args).toEqual([
       'run',
       '--rm',
+      '--security-opt=no-new-privileges',
       '--memory=4g',
       '--cpus=2',
       'sentinel-scanner:latest',
@@ -32,6 +33,7 @@ describe('buildDockerArgs', () => {
     expect(args).toEqual([
       'run',
       '--rm',
+      '--security-opt=no-new-privileges',
       '--memory=4g',
       '--cpus=2',
       '-v',

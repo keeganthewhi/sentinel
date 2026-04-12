@@ -621,7 +621,24 @@ export class ShannonScanner extends BaseScanner {
           cwd: shannonDirAbs,
           signal: controller.signal,
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env, NO_COLOR: '1' },
+          // SECURITY: whitelist env vars — do NOT spread process.env into
+          // the shannon subprocess. The host may have AWS keys, GitHub tokens,
+          // or other secrets that should not leak to Shannon's docker workers.
+          env: {
+            PATH: process.env.PATH ?? '',
+            HOME: process.env.HOME ?? '',
+            TERM: process.env.TERM ?? 'dumb',
+            NO_COLOR: '1',
+            // Shannon needs its own agent CLI config
+            SHANNON_AGENT_CLI: process.env.SHANNON_AGENT_CLI ?? process.env.SENTINEL_GOVERNOR_CLI ?? '',
+            // Docker Desktop on Windows needs these
+            ...(process.platform === 'win32' && {
+              APPDATA: process.env.APPDATA ?? '',
+              LOCALAPPDATA: process.env.LOCALAPPDATA ?? '',
+              USERPROFILE: process.env.USERPROFILE ?? '',
+              MSYS_NO_PATHCONV: '1',
+            }),
+          },
           // Shannon is a plain node script — no shell needed on any platform.
           shell: false,
         },
