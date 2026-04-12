@@ -27,14 +27,28 @@ export class FindingRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
-   * Insert all findings for a scan in a single transaction. The unique
-   * constraint on `(scanId, fingerprint)` ensures duplicates are rejected.
-   * Caller must run `correlate()` first to mark duplicates with `isDuplicate`.
+   * Insert all findings for a scan in a single transaction.
+   *
+   * The schema enforces `UNIQUE(scanId, fingerprint)`. SQLite does NOT
+   * support Prisma's `createMany({ skipDuplicates: true })` option, so a
+   * duplicate fingerprint in the payload makes `createMany` throw and
+   * rolls back the transaction. That's exactly what happened against
+   * primaspec.com in non-governed mode: nmap re-emitted the same
+   * `tcp/80` and `tcp/443` entries for multiple Cloudflare edge IPs,
+   * giving fingerprint collisions the correlation service couldn't
+   * catch. We dedupe by fingerprint here — last write wins, which is
+   * fine because duplicate-fingerprint entries are by definition the
+   * same finding with slightly different metadata.
    */
   public async insertMany(scanId: string, findings: readonly PersistFindingInput[]): Promise<number> {
     if (findings.length === 0) return 0;
 
-    const data: Prisma.FindingCreateManyInput[] = findings.map((f) => ({
+    const byFingerprint = new Map<string, PersistFindingInput>();
+    for (const f of findings) {
+      byFingerprint.set(f.fingerprint, f);
+    }
+
+    const data: Prisma.FindingCreateManyInput[] = Array.from(byFingerprint.values()).map((f) => ({
       scanId,
       fingerprint: f.fingerprint,
       title: f.title,

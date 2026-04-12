@@ -32,7 +32,6 @@ export interface StartOptions {
   readonly repo: string;
   readonly url?: string;
   readonly governed?: boolean;
-  readonly shannon?: boolean;
   readonly phases?: readonly (1 | 2 | 3)[];
   readonly verbose?: boolean;
   readonly workspacesRoot?: string;
@@ -75,10 +74,16 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     targetRepo: repoAbs,
     targetUrl: options.url,
     governed: options.governed ?? false,
-    // 45-minute per-scanner budget. Docker Desktop's 9P bind mount on Windows
-    // pushes semgrep wall-clock over 30 min on large monorepos; 45 min gives
-    // enough headroom while still bounding a runaway scanner.
-    scannerTimeoutMs: 45 * 60 * 1000,
+    // 90-minute per-scanner budget. Phase 1 and Phase 2 scanners finish in
+    // single-digit minutes against a volume-backed workspace, but Phase 3
+    // Shannon is an autonomous 5-phase DAST pipeline (pre-recon → recon →
+    // vuln-exploitation → reporting) that took 64 minutes end-to-end against
+    // https://primaspec.com with claude-opus-4-6. A 60-minute cap timed out
+    // with only 4 minutes left in Shannon's reporting phase, which was too
+    // narrow — bumped to 90 to give real-world scans comfortable headroom.
+    // Scanners that are way under this still return fast — the timeout is
+    // an upper bound, not a wait.
+    scannerTimeoutMs: 90 * 60 * 1000,
     scannerImage: 'sentinel-scanner:latest',
   };
 
@@ -103,10 +108,14 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
   );
 
   try {
-    // `--shannon` implicitly requests Phase 3. An explicit `--phases` always wins
-    // so users can still opt out (e.g. `--shannon --phases 1,3`).
+    // `--governed` is the single AI-mode switch. It turns on every AI
+    // feature: the governor plan / evaluation / report, Phase 3 Shannon
+    // exploitation, and (when no `--url` is given) Shannon's code-only
+    // pipeline. Non-governed scans run phases 1+2 only, mechanically, with
+    // no AI subprocess anywhere. An explicit `--phases` still wins for
+    // advanced users who want to e.g. run Phase 3 without the governor.
     const resolvedPhases: readonly (1 | 2 | 3)[] | undefined =
-      options.phases ?? (options.shannon === true ? [1, 2, 3] : undefined);
+      options.phases ?? (options.governed === true ? [1, 2, 3] : undefined);
 
     const summary = await deps.pipeline.run({
       context,

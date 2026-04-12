@@ -30,7 +30,6 @@ interface StartCliFlags {
   readonly repo: string;
   readonly url?: string;
   readonly governed?: boolean;
-  readonly shannon?: boolean;
   readonly phases?: string;
   readonly verbose?: boolean;
 }
@@ -62,10 +61,9 @@ export function buildProgram(): Command {
     .command('start')
     .description('run an end-to-end security scan')
     .requiredOption('--repo <path>', 'absolute path to the repo to scan')
-    .option('--url <url>', 'optional target URL for active scanners')
-    .option('--governed', 'enable the AI governor layer', false)
-    .option('--shannon', 'enable Phase 3 (Shannon DAST)', false)
-    .option('--phases <list>', 'comma-separated phase numbers (e.g. 1,2 or 1,2,3)')
+    .option('--url <url>', 'optional target URL for active scanners (subfinder/httpx/nuclei/nmap; without it shannon falls back to code-only mode)')
+    .option('--governed', 'enable AI mode: governor plan/evaluation/report + Phase 3 Shannon exploitation', false)
+    .option('--phases <list>', 'comma-separated phase numbers — advanced escape hatch (e.g. 1,2 or 1,2,3). Governed mode defaults to 1,2,3; non-governed to 1,2.')
     .option('--verbose', 'verbose logging', false)
     .action(async (flags: StartCliFlags) => {
       try {
@@ -74,7 +72,6 @@ export function buildProgram(): Command {
           repo: flags.repo,
           url: flags.url,
           governed: flags.governed === true,
-          shannon: flags.shannon === true,
           phases,
           verbose: flags.verbose === true,
         });

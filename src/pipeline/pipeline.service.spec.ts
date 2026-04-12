@@ -58,9 +58,13 @@ function makeService(registry: ScannerRegistry): {
   return { service, emitter };
 }
 
+// Pre-set workspaceVolume to bypass the real docker volume prep step —
+// unit tests use InMemoryPipelineRunner with FakeScanners that don't
+// read /workspace, so there's no point paying the ~5 s docker cost.
 const context: ScanContext = {
   scanId: 'scan-1',
   targetRepo: '/tmp/repo',
+  workspaceVolume: 'test-stub-volume',
   governed: false,
   scannerTimeoutMs: 5000,
   scannerImage: 'img',

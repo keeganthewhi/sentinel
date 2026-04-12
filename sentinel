@@ -98,13 +98,20 @@ if [ -d node_modules ]; then
   DATABASE_URL="$DATABASE_URL" pnpm exec prisma migrate deploy >/dev/null 2>&1 || true
 fi
 
-# 8. Optional Shannon clone
+# 8. Shannon clone (auto when --governed is present — governed mode implies
+#    full Phase 3 exploitation, which requires the shannon-noapi checkout).
 case " $* " in
-  *" --shannon "*)
+  *" --governed "*)
     if [ ! -d "$SHANNON_DIR" ]; then
-      info "Cloning shannon-noapi to $SHANNON_DIR"
+      info "Cloning shannon-noapi to $SHANNON_DIR (required by --governed)"
       mkdir -p "$(dirname "$SHANNON_DIR")"
       git clone "$SHANNON_REPO" "$SHANNON_DIR" >/dev/null
+    fi
+    # Build shannon CLI dist if missing so scanner.shannon can invoke it.
+    if [ ! -f "$SHANNON_DIR/apps/cli/dist/index.mjs" ]; then
+      info "Building shannon CLI (first --governed run)"
+      (cd "$SHANNON_DIR" && pnpm install >/dev/null 2>&1 && pnpm build >/dev/null 2>&1) \
+        || info "WARNING: shannon CLI build failed — Phase 3 will fail to invoke shannon"
     fi
     ;;
 esac

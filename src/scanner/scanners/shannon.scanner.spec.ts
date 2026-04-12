@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ShannonScanner } from './shannon.scanner.js';
 
 const scanner = new ShannonScanner();
@@ -54,16 +54,45 @@ describe('ShannonScanner', () => {
     expect(scanner.parseOutput(raw)[0]?.severity).toBe('HIGH');
   });
 
-  it('skips cleanly when context.governorEscalations is empty', async () => {
-    const result = await scanner.execute({
-      scanId: 's1',
-      targetRepo: '/tmp',
-      governed: true,
-      scannerTimeoutMs: 1000,
-      scannerImage: 'img',
+  describe('execute()', () => {
+    // Point at a nonexistent SHANNON_DIR so execute() short-circuits on the
+    // `existsSync(shannonCli)` check — we don't want unit tests to actually
+    // spawn the real shannon CLI subprocess.
+    beforeEach(() => {
+      process.env.SHANNON_DIR = '/nonexistent-shannon-dir-for-tests';
     });
-    expect(result.success).toBe(true);
-    expect(result.findings).toEqual([]);
+    afterEach(() => {
+      delete process.env.SHANNON_DIR;
+    });
+
+    it('returns failure result when the shannon CLI is not installed', async () => {
+      const result = await scanner.execute({
+        scanId: 's1',
+        targetRepo: '/tmp',
+        governed: true,
+        scannerTimeoutMs: 1000,
+        scannerImage: 'img',
+      });
+      expect(result.success).toBe(false);
+      expect(result.findings).toEqual([]);
+      expect(result.error).toContain('shannon CLI not found');
+    });
+
+    it('still attempts when targetUrl is missing (code-only mode)', async () => {
+      // No targetUrl → scanner uses 'code-only' internally but still tries
+      // to spawn shannon. Since SHANNON_DIR is bogus in this test, we hit
+      // the CLI-not-found short-circuit, which is fine — the point is that
+      // the scanner did NOT early-return on missing targetUrl.
+      const result = await scanner.execute({
+        scanId: 's1',
+        targetRepo: '/tmp',
+        governed: true,
+        scannerTimeoutMs: 1000,
+        scannerImage: 'img',
+      });
+      expect(result.error).toContain('shannon CLI not found');
+      expect(result.error).not.toContain('requires targetUrl');
+    });
   });
 
   it('name/phase/requiresUrl are correct', () => {
