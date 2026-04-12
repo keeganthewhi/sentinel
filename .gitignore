@@ -1,5 +1,18 @@
-# Sentinel .gitignore — excludes ephemeral state and build artifacts only.
-# Governance (*.md, MANIFEST.json, docs/, governor-templates/, plans/) IS committed.
+# Sentinel .gitignore
+
+# Internal development / governance files (kept locally, not on GitHub)
+AGENTS.md
+AGENTS-full.md
+BLUEPRINT.md
+CLAUDE.md
+FEATURES.md
+STATE.md
+TESTS.md
+THREATS.md
+MANIFEST.json
+plans/
+audits/
+docs/adr/
 
 # Node / pnpm
 node_modules/
@@ -42,4 +55,3 @@ Thumbs.db
 
 # Test artifacts
 *.log
-audits/*.tmp

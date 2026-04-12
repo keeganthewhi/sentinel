@@ -50,20 +50,6 @@ The report is a complete security assessment with:
 - Per-finding remediation guidance
 - Governor decision rationale (what was discarded and why)
 
-## Real Example
-
-We ran Sentinel against [Ayarticaret](https://github.com/keeganthewhi/ayarticaret), a 50 MB Turkish B2B e-commerce monorepo (NestJS + Next.js + Prisma). From a completely fresh `git clone`:
-
-| Step | Time |
-|------|------|
-| Bootstrap (install + build + Shannon clone + Docker images) | ~8 min (first run only) |
-| Phase 1: Trivy + Semgrep + TruffleHog (parallel) | 2.5 min |
-| Governor AI decisions | ~10 min |
-| Phase 3: Shannon 5-phase AI pentest | 87 min |
-| **Total** | **~110 min** |
-
-**Result**: 198 findings. 3 critical (production secrets + Axios RCE chain + Shannon-confirmed authorization bypass). AI-authored `SENTINEL_REPORT.md` dropped into the repo root.
-
 ## Two Modes
 
 ### Normal (mechanical, zero AI)
