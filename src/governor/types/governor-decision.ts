@@ -25,6 +25,8 @@ export const EVALUATION_SCHEMA = z.object({
       z.object({
         findingFingerprint: z.string(),
         reason: z.string(),
+        confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']).default('MEDIUM'),
+        evidenceChain: z.string().default(''),
       }),
     )
     .default([]),
@@ -33,6 +35,7 @@ export const EVALUATION_SCHEMA = z.object({
       z.object({
         findingFingerprint: z.string(),
         reason: z.string(),
+        confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']).default('HIGH'),
       }),
     )
     .default([]),
@@ -42,6 +45,7 @@ export const EVALUATION_SCHEMA = z.object({
         findingFingerprint: z.string(),
         newSeverity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO']),
         reason: z.string(),
+        confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']).default('MEDIUM'),
       }),
     )
     .default([]),

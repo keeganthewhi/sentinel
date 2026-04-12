@@ -90,7 +90,22 @@ export function buildScanPlanPrompt(input: ScanPlanInput): string {
     packageJson: input.packageJson,
     sentinelYaml: input.sentinelYaml,
   });
-  return `${systemLayer()}\n\nDecision: scan_plan\n\n${userContent}\n\nReply with a JSON object matching the scanPlan schema.`;
+  return [
+    systemLayer(),
+    '',
+    'Decision: scan_plan',
+    '',
+    userContent,
+    '',
+    'Instructions:',
+    '1. Detect the exact tech stack from the file tree and package manifest. Be specific (e.g., "NestJS 11 with Prisma ORM" not "Node.js app").',
+    '2. Choose Semgrep rule packs that match the stack precisely. NEVER use p/default alone — it generates cross-language noise.',
+    '3. Disable scanners that do not apply. If no targetUrl is provided, disable subfinder, httpx, nuclei, nmap, schemathesis.',
+    '4. If a targetUrl is provided, configure Nuclei templates for the detected stack only. Never run the full template set.',
+    '5. Identify the top 5 attack surface priorities based on the file tree (auth, payment, file upload, admin, user input).',
+    '',
+    'Reply with a JSON object matching the scanPlan schema.',
+  ].join('\n');
 }
 
 /**
@@ -124,7 +139,31 @@ export function buildEvaluationPrompt(input: EvaluationInput): string {
     findings: redact(input.findings),
     previousDecisions: redact(input.previousDecisions),
   });
-  return `${systemLayer()}\n\nDecision: evaluation\n\n${userContent}\n\nReply with a JSON object matching the evaluation schema.`;
+  return [
+    systemLayer(),
+    '',
+    'Decision: evaluation',
+    '',
+    userContent,
+    '',
+    'Instructions:',
+    '1. Apply the False Positive Verification Checklist to EVERY finding before deciding to keep, discard, or escalate.',
+    '2. For each finding, check: Tech Stack Match, Code Reachability, Contextual Justification, Scanner Confidence, Evidence Completeness.',
+    '3. Discard findings that fail 2+ checklist items. Document WHICH items failed and WHY.',
+    '4. Only escalate findings at HIGH or MEDIUM confidence with explicit scanner evidence. Never escalate LOW confidence findings.',
+    '5. Cross-correlate findings across scanners. Trivy CVE + Semgrep taint on the same code path = upgrade severity. Nuclei match without corroboration = downgrade.',
+    '6. Maximum 10 escalations to Shannon. Rank by exploitability and take the top candidates.',
+    '7. Include confidence level (HIGH/MEDIUM/LOW) and evidenceChain for every escalation.',
+    '8. Common false positives to watch for:',
+    '   - Dockerfile lint rules (WORKDIR, HEALTHCHECK, USER) from Trivy IaC — these are NOT security vulnerabilities',
+    '   - spawn-shell-true in code with documented Windows .cmd compatibility justification — intentional pattern',
+    '   - devDependency CVEs — test/build tools that never run in production',
+    '   - Nuclei template matches for wrong tech stack (WordPress templates on NestJS)',
+    '   - Test fixture secrets in __tests__/ or *.spec.* files',
+    '   - Public keys reported as secrets by TruffleHog',
+    '',
+    'Reply with a JSON object matching the evaluation schema.',
+  ].join('\n');
 }
 
 export function buildReportPrompt(input: ReportInput): string {
@@ -135,7 +174,30 @@ export function buildReportPrompt(input: ReportInput): string {
     findings: redact(input.findings),
     decisions: redact(input.decisions),
   });
-  return `${systemLayer()}\n\nDecision: report\n\n${userContent}\n\nReply with a JSON object containing { markdown, citationFingerprints }.`;
+  return [
+    systemLayer(),
+    '',
+    'Decision: report',
+    '',
+    userContent,
+    '',
+    'Instructions:',
+    '1. Before writing, verify EVERY finding you plan to include:',
+    '   - The fingerprint MUST exist in the findings array above. If it does not exist, the finding does not exist.',
+    '   - The file path MUST match the finding\'s filePath field exactly. Do not invent or guess file paths.',
+    '   - The CVE ID MUST match the finding\'s cveId field exactly. Do not cite CVEs from memory.',
+    '   - The scanner name MUST match the finding\'s scanner field. Do not attribute findings to scanners that did not report them.',
+    '2. Do NOT describe vulnerabilities that no scanner reported. Every claim must trace to a fingerprint.',
+    '3. Do NOT use speculative language ("could potentially", "might allow") without scanner evidence.',
+    '4. Do NOT pad the report with generic security advice. Only include remediation specific to actual findings.',
+    '5. Do NOT inflate severity. Match severity to evidence, not intuition.',
+    '6. Include a "Noise Filtered" section listing discarded findings and reasons — transparency builds trust.',
+    '7. Include a "Caveats" section noting any scanner that was skipped, any auth limitations, any scope restrictions.',
+    '8. Cross-correlate findings from different scanners and explain the connections explicitly.',
+    '9. The citationFingerprints array must contain ONLY fingerprints from the findings array. No invented fingerprints.',
+    '',
+    'Reply with a JSON object containing { markdown, citationFingerprints }.',
+  ].join('\n');
 }
 
 /** Test-only — clear the cached contract so a different file path can be loaded. */
