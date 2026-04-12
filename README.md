@@ -119,7 +119,7 @@ Phase 5: Report ──────── writes comprehensive security assessmen
 
 Shannon findings are parsed back into Sentinel and merged into the final `SENTINEL_REPORT.md`.
 
-**Runtime**: 30-90 min for a typical monorepo. The ayarticaret scan took 87 min and used ~$36 in subscription credit (billed through your existing Claude/Codex/Gemini subscription, not separate API charges).
+**Runtime**: 30-90 min for a typical monorepo, depending on target size. Billed through your existing Claude/Codex/Gemini subscription, not separate API charges.
 
 ## Commands
 
