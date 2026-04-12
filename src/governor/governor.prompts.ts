@@ -43,6 +43,13 @@ export interface ScanPlanInput {
   readonly sentinelYaml?: unknown;
   readonly targetRepo: string;
   readonly targetUrl?: string;
+  /**
+   * Auto-discovered OpenAPI spec URL (when the target URL serves one at a
+   * well-known path) OR user-supplied --openapi value. When present, the
+   * governor should enable schemathesis in its scan plan. When absent,
+   * schemathesis is skipped per the governor contract.
+   */
+  readonly openApiSpec?: string;
 }
 
 export interface EvaluationInput {
@@ -74,6 +81,7 @@ export function buildScanPlanPrompt(input: ScanPlanInput): string {
   const userContent = wrapUserContent('scan_plan_input', {
     targetRepo: input.targetRepo,
     targetUrl: input.targetUrl,
+    openApiSpec: input.openApiSpec,
     fileTreeDigest: input.fileTreeDigest,
     packageJson: input.packageJson,
     sentinelYaml: input.sentinelYaml,

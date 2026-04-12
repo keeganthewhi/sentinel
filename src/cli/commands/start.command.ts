@@ -24,6 +24,7 @@ import { CorrelationService } from '../../correlation/correlation.service.js';
 import { PipelineService } from '../../pipeline/pipeline.service.js';
 import { MarkdownRenderer } from '../../report/renderers/markdown.renderer.js';
 import { JsonRenderer } from '../../report/renderers/json.renderer.js';
+import { discoverOpenApiSpec } from '../../scanner/scanners/schemathesis.scanner.js';
 import type { ScanContext } from '../../scanner/types/scanner.interface.js';
 import type { NormalizedFinding } from '../../scanner/types/finding.interface.js';
 import type { ScanSummary } from '../../pipeline/types.js';
@@ -70,11 +71,30 @@ function toForwardSlash(p: string): string {
 export async function startCommand(options: StartOptions, deps: StartDeps): Promise<number> {
   const scanId = randomUUID();
   const repoAbs = toForwardSlash(resolvePath(options.repo));
+  // Auto-discover an OpenAPI spec BEFORE we construct the scan context.
+  // Doing it here — rather than inside the schemathesis scanner — lets the
+  // governor's scan plan see the spec in its plan input and choose to
+  // enable schemathesis. If we leave it to the scanner, the governor's
+  // enabledScanners allow-list will already have pruned schemathesis
+  // before the scanner's own execute() runs.
+  let resolvedOpenApiSpec = options.openApiSpec;
+  if (
+    (resolvedOpenApiSpec === undefined || resolvedOpenApiSpec.trim() === '') &&
+    options.url !== undefined &&
+    options.url.trim() !== ''
+  ) {
+    const discovered = await discoverOpenApiSpec(options.url);
+    if (discovered !== null) {
+      rootLogger.info({ openApiSpec: discovered }, 'auto-discovered OpenAPI spec');
+      resolvedOpenApiSpec = discovered;
+    }
+  }
+
   const context: ScanContext = {
     scanId,
     targetRepo: repoAbs,
     targetUrl: options.url,
-    openApiSpec: options.openApiSpec,
+    openApiSpec: resolvedOpenApiSpec,
     governed: options.governed ?? false,
     // 12-hour per-scanner budget. This is an UPPER BOUND, not a wait — Phase
     // 1 and Phase 2 scanners still finish in single-digit minutes against a

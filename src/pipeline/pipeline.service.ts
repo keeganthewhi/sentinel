@@ -384,6 +384,7 @@ export class PipelineService {
     readonly packageJson?: unknown;
     readonly targetRepo: string;
     readonly targetUrl?: string;
+    readonly openApiSpec?: string;
   } {
     const tree: string[] = [];
     const excluded = new Set(['node_modules', 'dist', '.next', '.git', 'coverage', 'build']);
@@ -423,6 +424,7 @@ export class PipelineService {
       packageJson,
       targetRepo: context.targetRepo,
       ...(context.targetUrl !== undefined && { targetUrl: context.targetUrl }),
+      ...(context.openApiSpec !== undefined && { openApiSpec: context.openApiSpec }),
     };
   }
 
