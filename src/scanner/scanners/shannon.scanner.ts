@@ -621,40 +621,34 @@ export class ShannonScanner extends BaseScanner {
           cwd: shannonDirAbs,
           signal: controller.signal,
           stdio: ['ignore', 'pipe', 'pipe'],
-          // SECURITY: whitelist env vars — do NOT spread full process.env
-          // into the Shannon subprocess. The host may have AWS keys, GitHub
-          // tokens, or other secrets that should not leak to Shannon's docker
-          // workers. We pass:
-          //   - OS plumbing (PATH, HOME, TEMP, SYSTEMROOT, etc.) so Node.js,
-          //     docker CLI, and OS APIs work normally
-          //   - Shannon config (SHANNON_AGENT_CLI) so it knows which AI to use
-          //   - Explicitly NOT: ANTHROPIC_API_KEY, OPENAI_API_KEY, AWS_*,
-          //     GITHUB_TOKEN, or any other application-level secret
+          // SECURITY: blocklist secrets from process.env instead of
+          // whitelisting safe vars. A whitelist is theoretically cleaner but
+          // Docker/Node/MSYS on Windows depend on dozens of undocumented env
+          // vars (SYSTEMROOT, DOCKER_*, npm_*, PATHEXT, HOMEDRIVE, etc.)
+          // that are impossible to enumerate completely. A blocklist of
+          // known-dangerous secrets is more robust in practice.
           env: {
-            // Core OS — required for Node.js, docker CLI, and system APIs
-            PATH: process.env.PATH ?? '',
-            HOME: process.env.HOME ?? '',
-            TERM: process.env.TERM ?? 'dumb',
-            LANG: process.env.LANG ?? '',
+            ...Object.fromEntries(
+              Object.entries(process.env).filter(([key]) => {
+                const upper = key.toUpperCase();
+                // Block API keys, tokens, and secrets that the host might have
+                // set for other projects. These MUST NOT leak to Shannon's
+                // docker workers.
+                if (upper.includes('API_KEY')) return false;
+                if (upper.includes('SECRET')) return false;
+                if (upper.includes('TOKEN') && upper !== 'CLAUDE_CODE_MAX_OUTPUT_TOKENS') return false;
+                if (upper.startsWith('AWS_')) return false;
+                if (upper.startsWith('GITHUB_')) return false;
+                if (upper === 'GOOGLE_APPLICATION_CREDENTIALS') return false;
+                if (upper === 'OPENAI_API_KEY') return false;
+                if (upper === 'OPENROUTER_API_KEY') return false;
+                if (upper === 'ANTHROPIC_API_KEY') return false;
+                return true;
+              }),
+            ),
             NO_COLOR: '1',
-            // Shannon agent selection
+            // Ensure Shannon knows which agent CLI to use
             SHANNON_AGENT_CLI: process.env.SHANNON_AGENT_CLI ?? process.env.SENTINEL_GOVERNOR_CLI ?? '',
-            // Windows: docker CLI needs SYSTEMROOT to locate winsock/crypto
-            // DLLs, PROGRAMDATA for Docker Desktop config, COMSPEC for
-            // shell:true in shannon's own child spawns, and TEMP for scratch.
-            ...(process.platform === 'win32' && {
-              SYSTEMROOT: process.env.SYSTEMROOT ?? 'C:\\Windows',
-              SYSTEMDRIVE: process.env.SYSTEMDRIVE ?? 'C:',
-              PROGRAMDATA: process.env.PROGRAMDATA ?? '',
-              PROGRAMFILES: process.env.PROGRAMFILES ?? '',
-              COMSPEC: process.env.COMSPEC ?? 'C:\\Windows\\system32\\cmd.exe',
-              TEMP: process.env.TEMP ?? '',
-              TMP: process.env.TMP ?? '',
-              APPDATA: process.env.APPDATA ?? '',
-              LOCALAPPDATA: process.env.LOCALAPPDATA ?? '',
-              USERPROFILE: process.env.USERPROFILE ?? '',
-              MSYS_NO_PATHCONV: '1',
-            }),
           },
           // Shannon is a plain node script — no shell needed on any platform.
           shell: false,
