@@ -175,6 +175,20 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
       { encoding: 'utf8', mode: 0o600 },
     );
 
+    // Drop the final report into the TARGET REPO root as SENTINEL_REPORT.md
+    // so the user finds it where they'd expect — next to their code, not
+    // buried inside sentinel's workspace directory.
+    try {
+      const targetReportPath = join(repoAbs, 'SENTINEL_REPORT.md');
+      writeFileSync(targetReportPath, markdown, { encoding: 'utf8', mode: 0o600 });
+      rootLogger.info({ path: targetReportPath }, 'report written to target repo root');
+    } catch (err) {
+      rootLogger.warn(
+        { err: (err as Error).message },
+        'could not write SENTINEL_REPORT.md to target repo — report still available in workspaces/',
+      );
+    }
+
     // Print a per-scanner summary so the user can see what actually ran.
     for (const r of summary.scannerResults) {
       const status = r.success ? 'OK' : 'FAIL';
