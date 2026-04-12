@@ -621,18 +621,35 @@ export class ShannonScanner extends BaseScanner {
           cwd: shannonDirAbs,
           signal: controller.signal,
           stdio: ['ignore', 'pipe', 'pipe'],
-          // SECURITY: whitelist env vars — do NOT spread process.env into
-          // the shannon subprocess. The host may have AWS keys, GitHub tokens,
-          // or other secrets that should not leak to Shannon's docker workers.
+          // SECURITY: whitelist env vars — do NOT spread full process.env
+          // into the Shannon subprocess. The host may have AWS keys, GitHub
+          // tokens, or other secrets that should not leak to Shannon's docker
+          // workers. We pass:
+          //   - OS plumbing (PATH, HOME, TEMP, SYSTEMROOT, etc.) so Node.js,
+          //     docker CLI, and OS APIs work normally
+          //   - Shannon config (SHANNON_AGENT_CLI) so it knows which AI to use
+          //   - Explicitly NOT: ANTHROPIC_API_KEY, OPENAI_API_KEY, AWS_*,
+          //     GITHUB_TOKEN, or any other application-level secret
           env: {
+            // Core OS — required for Node.js, docker CLI, and system APIs
             PATH: process.env.PATH ?? '',
             HOME: process.env.HOME ?? '',
             TERM: process.env.TERM ?? 'dumb',
+            LANG: process.env.LANG ?? '',
             NO_COLOR: '1',
-            // Shannon needs its own agent CLI config
+            // Shannon agent selection
             SHANNON_AGENT_CLI: process.env.SHANNON_AGENT_CLI ?? process.env.SENTINEL_GOVERNOR_CLI ?? '',
-            // Docker Desktop on Windows needs these
+            // Windows: docker CLI needs SYSTEMROOT to locate winsock/crypto
+            // DLLs, PROGRAMDATA for Docker Desktop config, COMSPEC for
+            // shell:true in shannon's own child spawns, and TEMP for scratch.
             ...(process.platform === 'win32' && {
+              SYSTEMROOT: process.env.SYSTEMROOT ?? 'C:\\Windows',
+              SYSTEMDRIVE: process.env.SYSTEMDRIVE ?? 'C:',
+              PROGRAMDATA: process.env.PROGRAMDATA ?? '',
+              PROGRAMFILES: process.env.PROGRAMFILES ?? '',
+              COMSPEC: process.env.COMSPEC ?? 'C:\\Windows\\system32\\cmd.exe',
+              TEMP: process.env.TEMP ?? '',
+              TMP: process.env.TMP ?? '',
               APPDATA: process.env.APPDATA ?? '',
               LOCALAPPDATA: process.env.LOCALAPPDATA ?? '',
               USERPROFILE: process.env.USERPROFILE ?? '',
