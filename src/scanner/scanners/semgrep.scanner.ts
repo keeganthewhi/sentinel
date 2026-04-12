@@ -123,13 +123,14 @@ export class SemgrepScanner extends BaseScanner {
       '--exclude', 'yarn.lock',
       '/workspace',
     ];
+    // Semgrep needs network to fetch rules from semgrep.dev when using
+    // --config p/default. Cannot use network: 'none'.
     const outcome = await runScannerInDocker({
       scanner: this,
       executor: this.executor,
       context,
       command,
       nonZeroIsSuccess: true,
-      network: 'none',
     });
     if (!outcome.ok) return outcome.result;
 

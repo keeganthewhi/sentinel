@@ -132,12 +132,13 @@ export class TrivyScanner extends BaseScanner {
       ].join(','),
       '/workspace',
     ];
+    // Trivy needs network to download its vulnerability DB on first run
+    // inside the container (~/.cache/trivy/db/). Cannot use network: 'none'.
     const outcome = await runScannerInDocker({
       scanner: this,
       executor: this.executor,
       context,
       command,
-      network: 'none',
     });
     if (!outcome.ok) return outcome.result;
 
