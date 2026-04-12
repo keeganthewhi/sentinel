@@ -189,6 +189,13 @@ export class PipelineService {
     }
 
     // ---------- Phase 1 ----------
+    // Holds Decision 2 (phase1_evaluation) while Phase 2 runs in parallel.
+    // Decision 2 only affects finding persistence (discards, severity
+    // adjustments, Shannon escalations) and does NOT influence what Phase 2
+    // scanners do. Running them concurrently saves 1–5 min per scan.
+    let decision2Promise: Promise<EvaluationOutcome> | null = null;
+    let phase1Findings: NormalizedFinding[] = [];
+
     if (selectedPhases.includes(1)) {
       const phase1Results = await runPhase(1, this.registry, activeRunner, context, this.emitter);
       allResults.push(...phase1Results);
@@ -196,14 +203,19 @@ export class PipelineService {
       // Enrich context from subfinder / httpx results.
       context = this.mergeDiscoveries(context, phase1Results);
 
-      const phase1Findings: NormalizedFinding[] = [];
+      phase1Findings = [];
       for (const r of phase1Results) phase1Findings.push(...r.findings);
       allFindings.push(...phase1Findings);
       executedPhases.push(1);
 
-      // ---------- Governor Decision 2: evaluate Phase 1 ----------
+      // Kick off Decision 2 in the background — the phase-evaluator's own
+      // errors become a fallback decision, so this promise never rejects.
       if (phaseEval !== undefined && phase1Findings.length > 0) {
-        const outcome = await this.evaluatePhase(
+        this.logger.info(
+          { scanId, findingCount: phase1Findings.length },
+          'starting governor Decision 2 in parallel with Phase 2',
+        );
+        decision2Promise = this.evaluatePhase(
           context,
           phase1Findings,
           governorDecisions,
@@ -211,43 +223,53 @@ export class PipelineService {
           1,
           phaseEval,
         );
-        // Replace allFindings with the evaluated subset (discards removed, severities adjusted).
-        allFindings = outcome.findings;
-        // Thread escalations into the context so Phase 3 picks them up.
-        if (outcome.escalations.length > 0) {
-          context = { ...context, governorEscalations: outcome.escalations };
-        }
       }
     }
 
-    // ---------- Phase 2 ----------
+    // ---------- Phase 2 (runs in parallel with Decision 2) ----------
+    let phase2Findings: NormalizedFinding[] = [];
     if (selectedPhases.includes(2)) {
-      const phase2Context: ScanContext = { ...context, phase1Findings: [...allFindings] };
+      const phase2Context: ScanContext = {
+        ...context,
+        phase1Findings: [...phase1Findings],
+      };
       const phase2Results = await runPhase(2, this.registry, activeRunner, phase2Context, this.emitter);
       allResults.push(...phase2Results);
-      const phase2Findings: NormalizedFinding[] = [];
+      phase2Findings = [];
       for (const r of phase2Results) phase2Findings.push(...r.findings);
       allFindings.push(...phase2Findings);
       executedPhases.push(2);
+    }
 
-      // ---------- Governor Decision 3: evaluate Phase 2 (on the full finding set) ----------
-      if (phaseEval !== undefined && allFindings.length > 0) {
-        const outcome = await this.evaluatePhase(
-          context,
-          allFindings,
-          governorDecisions,
-          'phase2_evaluation',
-          2,
-          phaseEval,
-        );
-        allFindings = outcome.findings;
-        if (outcome.escalations.length > 0) {
-          const merged = new Set<string>([
-            ...(context.governorEscalations ?? []),
-            ...outcome.escalations,
-          ]);
-          context = { ...context, governorEscalations: [...merged] };
-        }
+    // ---------- Join Decision 2 ----------
+    // Now that Phase 2 is done, merge its findings with the Decision-2
+    // evaluated Phase 1 set. Decision 2 is guaranteed resolved by await.
+    if (decision2Promise !== null) {
+      const outcome = await decision2Promise;
+      // Rebuild allFindings = evaluated Phase 1 + raw Phase 2.
+      allFindings = [...outcome.findings, ...phase2Findings];
+      if (outcome.escalations.length > 0) {
+        context = { ...context, governorEscalations: outcome.escalations };
+      }
+    }
+
+    // ---------- Governor Decision 3: evaluate the full finding set ----------
+    if (selectedPhases.includes(2) && phaseEval !== undefined && allFindings.length > 0) {
+      const outcome = await this.evaluatePhase(
+        context,
+        allFindings,
+        governorDecisions,
+        'phase2_evaluation',
+        2,
+        phaseEval,
+      );
+      allFindings = outcome.findings;
+      if (outcome.escalations.length > 0) {
+        const merged = new Set<string>([
+          ...(context.governorEscalations ?? []),
+          ...outcome.escalations,
+        ]);
+        context = { ...context, governorEscalations: [...merged] };
       }
     }
 

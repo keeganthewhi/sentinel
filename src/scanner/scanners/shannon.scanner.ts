@@ -319,9 +319,15 @@ export class ShannonScanner extends BaseScanner {
     //   1. a new deliverables/*.md file exists (shannon produced its report)
     //   2. session.json status becomes "completed" / "failed" / "cancelled"
     //   3. scanner budget exhausted
+    // Also tail workflow.log to surface shannon's per-phase progress
+    // ("pre-recon", "recon", "vulnerability-exploitation", "reporting") so
+    // the user sees progress instead of a blank terminal for 60+ minutes.
+    const workflowLogPath = join(workspaceDir, 'workflow.log');
     const pollOutcome = await this.pollForCompletion(
       deliverablesDir,
       sessionJsonPath,
+      workflowLogPath,
+      context.scanId,
       context.scannerTimeoutMs - (Date.now() - startedAt),
     );
 
@@ -389,6 +395,8 @@ export class ShannonScanner extends BaseScanner {
   private async pollForCompletion(
     deliverablesDir: string,
     sessionJsonPath: string,
+    workflowLogPath: string,
+    scanId: string,
     budgetMs: number,
   ): Promise<{
     status: 'completed' | 'failed' | 'timeout';
@@ -397,6 +405,7 @@ export class ShannonScanner extends BaseScanner {
   }> {
     const pollIntervalMs = 5_000;
     const deadline = Date.now() + Math.max(budgetMs, 0);
+    const seenPhaseEvents = new Set<string>();
 
     while (Date.now() < deadline) {
       // 1. Session status (fastest, just one file read).
@@ -410,6 +419,13 @@ export class ShannonScanner extends BaseScanner {
       } catch {
         // best-effort — shannon may be mid-write
       }
+
+      // 2. Scan workflow.log for phase transitions we haven't logged yet.
+      //    Shannon writes `[PHASE] Starting: <name>` / `[PHASE] Completed:
+      //    <name>` markers, plus `[save_deliverable]` events when files land.
+      //    Tailing the log and re-logging deltas gives sentinel users
+      //    real-time shannon progress visibility.
+      this.emitShannonProgressEvents(workflowLogPath, seenPhaseEvents, scanId);
 
       if (sessionStatus === 'completed') {
         const markdown = this.readDeliverablesMarkdown(deliverablesDir);
@@ -426,6 +442,62 @@ export class ShannonScanner extends BaseScanner {
     // Budget exhausted — return whatever partial deliverables exist.
     const markdown = this.readDeliverablesMarkdown(deliverablesDir);
     return { status: 'timeout', reportMarkdown: markdown };
+  }
+
+  /**
+   * Scan the shannon workflow.log for phase / deliverable events we haven't
+   * logged yet. Emits one sentinel log line per newly-seen event. `seen`
+   * is a Set of event keys that caller carries across poll iterations so
+   * we don't re-log the same line.
+   *
+   * Extracts three event kinds:
+   *   - `[PHASE] Starting: <name>`
+   *   - `[PHASE] Completed: <name>`
+   *   - `[save_deliverable] ... <filename>.md` (when shannon drops a file)
+   */
+  private emitShannonProgressEvents(
+    workflowLogPath: string,
+    seen: Set<string>,
+    scanId: string,
+  ): void {
+    if (!existsSync(workflowLogPath)) return;
+    let raw: string;
+    try {
+      raw = readFileSync(workflowLogPath, 'utf8');
+    } catch {
+      return;
+    }
+
+    // Only inspect recent-ish log tail to keep re-parsing cheap. shannon's
+    // workflow.log can grow to several MB over an hour-long run.
+    const tail = raw.length > 256_000 ? raw.slice(raw.length - 256_000) : raw;
+    const lines = tail.split('\n');
+
+    const PHASE_RE = /\[PHASE\]\s+(Starting|Completed):\s+(.+?)\s*$/;
+    const DELIVERABLE_RE = /save[_-]deliverable.*?([a-zA-Z0-9_-]+\.md)/;
+
+    for (const line of lines) {
+      const phaseMatch = PHASE_RE.exec(line);
+      if (phaseMatch !== null) {
+        const [, verb, name] = phaseMatch;
+        const key = `phase:${verb}:${name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        logger.info(
+          { scanId, phase: name, verb },
+          `shannon ${verb.toLowerCase()} phase ${name}`,
+        );
+        continue;
+      }
+      const deliverableMatch = DELIVERABLE_RE.exec(line);
+      if (deliverableMatch !== null) {
+        const filename = deliverableMatch[1];
+        const key = `deliverable:${filename}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        logger.info({ scanId, deliverable: filename }, `shannon wrote ${filename}`);
+      }
+    }
   }
 
   /**
