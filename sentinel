@@ -113,6 +113,14 @@ case " $* " in
       (cd "$SHANNON_DIR" && pnpm install >/dev/null 2>&1 && pnpm build >/dev/null 2>&1) \
         || info "WARNING: shannon CLI build failed — Phase 3 will fail to invoke shannon"
     fi
+    # Build shannon worker Docker image if missing. This is the container
+    # that actually runs the 5-phase AI pentest pipeline. First build
+    # takes ~5-10 minutes (installs Chromium, agent CLIs, Playwright).
+    if ! docker image inspect shannon-worker:latest >/dev/null 2>&1; then
+      info "Building shannon-worker Docker image (first --governed run, ~5-10 min)"
+      (cd "$SHANNON_DIR" && node shannon build 2>&1) \
+        || info "WARNING: shannon-worker image build failed — Phase 3 will fail"
+    fi
     # Run shannon setup if .env is missing — creates .env with the
     # auto-detected agent CLI (claude/codex/gemini) so the worker
     # container knows which CLI to use for its AI queries.
