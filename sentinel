@@ -113,6 +113,14 @@ case " $* " in
       (cd "$SHANNON_DIR" && pnpm install >/dev/null 2>&1 && pnpm build >/dev/null 2>&1) \
         || info "WARNING: shannon CLI build failed — Phase 3 will fail to invoke shannon"
     fi
+    # Run shannon setup if .env is missing — creates .env with the
+    # auto-detected agent CLI (claude/codex/gemini) so the worker
+    # container knows which CLI to use for its AI queries.
+    if [ ! -f "$SHANNON_DIR/.env" ]; then
+      info "Running shannon setup (auto-detecting agent CLI)"
+      (cd "$SHANNON_DIR" && node shannon setup >/dev/null 2>&1) \
+        || info "WARNING: shannon setup failed — Phase 3 may fail to authenticate"
+    fi
     ;;
 esac
 

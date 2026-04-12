@@ -339,6 +339,9 @@ export function createAgentAdapter(preference?: string): AgentAdapter {
     const adapter = ADAPTER_REGISTRY[name]();
     if (isOnPath(adapter.bin)) {
       logger.info({ adapter: name, bin: adapter.bin }, 'auto-detected governor CLI');
+      // Persist the detection so downstream code (e.g. Shannon's env
+      // whitelist in shannon.scanner.ts) can read which CLI was chosen.
+      process.env.SENTINEL_GOVERNOR_CLI = name;
       return adapter;
     }
   }
