@@ -74,16 +74,17 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     targetRepo: repoAbs,
     targetUrl: options.url,
     governed: options.governed ?? false,
-    // 90-minute per-scanner budget. Phase 1 and Phase 2 scanners finish in
-    // single-digit minutes against a volume-backed workspace, but Phase 3
-    // Shannon is an autonomous 5-phase DAST pipeline (pre-recon → recon →
-    // vuln-exploitation → reporting) that took 64 minutes end-to-end against
-    // https://primaspec.com with claude-opus-4-6. A 60-minute cap timed out
-    // with only 4 minutes left in Shannon's reporting phase, which was too
-    // narrow — bumped to 90 to give real-world scans comfortable headroom.
-    // Scanners that are way under this still return fast — the timeout is
-    // an upper bound, not a wait.
-    scannerTimeoutMs: 90 * 60 * 1000,
+    // 12-hour per-scanner budget. This is an UPPER BOUND, not a wait — Phase
+    // 1 and Phase 2 scanners still finish in single-digit minutes against a
+    // volume-backed workspace and return immediately. The ceiling exists for
+    // Phase 3 Shannon, which is an autonomous 5-phase AI-DAST pipeline
+    // (pre-recon → recon → vuln-exploitation → reporting) whose wall-clock
+    // scales with repo size: the 1 MB Sentinel repo took 64 minutes, but
+    // real-world monorepos (NestJS + Next.js + workers, 50k+ files) can
+    // easily push Shannon past 6-8 hours while it walks each module,
+    // reasons about reachability, and tries exploits. 12 hours keeps us
+    // bounded while never cutting a legitimate scan short.
+    scannerTimeoutMs: 12 * 60 * 60 * 1000,
     scannerImage: 'sentinel-scanner:latest',
   };
 
