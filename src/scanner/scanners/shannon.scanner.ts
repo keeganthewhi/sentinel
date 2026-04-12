@@ -69,6 +69,152 @@ function normalizeSeverity(raw: string | undefined): Severity {
   return 'HIGH';
 }
 
+/**
+ * An entry from shannon's `## N. Exploitation Queue` structured JSON. Shannon
+ * emits one of these arrays per per-phase analysis deliverable (auth / authz /
+ * injection / ssrf / xss / …). Every field is optional because shannon's
+ * schema has drifted between releases — we read defensively.
+ */
+interface ShannonQueueEntry {
+  readonly ID?: string;
+  readonly vulnerability_type?: string;
+  readonly externally_exploitable?: boolean;
+  readonly source_endpoint?: string;
+  readonly vulnerable_code_location?: string;
+  readonly missing_defense?: string;
+  readonly exploitation_hypothesis?: string;
+  readonly suggested_exploit_technique?: string;
+  readonly confidence?: string;
+  readonly severity?: string;
+  readonly notes?: string;
+}
+
+/**
+ * Every shannon finding is a DAST result by definition — shannon only runs
+ * in Phase 3 (exploitation) and reports on behaviors it verified against a
+ * live target. The specific vulnerability family (injection / auth / ssrf /
+ * xss / …) is preserved in the finding title via shannon's ID prefix
+ * (`AUTH-VULN-03`, `INJ-VULN-01`, …), so we don't lose information by
+ * collapsing the `category` field to 'dast'.
+ */
+const SHANNON_CATEGORY = 'dast';
+
+/**
+ * Shannon doesn't emit an explicit severity on every queue entry — its
+ * `confidence` field is about detection certainty, not impact. We derive a
+ * reasonable severity from whichever fields are present:
+ *   1. explicit `severity` (if shannon ever adds one)
+ *   2. explicit `confidence` mapped: High→HIGH, Medium→MEDIUM, Low→LOW
+ *   3. `externally_exploitable: true` → HIGH, else MEDIUM
+ *   4. fallback HIGH (shannon findings are DAST-confirmed by design)
+ */
+function severityFromEntry(entry: ShannonQueueEntry): Severity {
+  if (entry.severity !== undefined) {
+    return normalizeSeverity(entry.severity);
+  }
+  if (entry.confidence !== undefined) {
+    const c = entry.confidence.trim().toLowerCase();
+    if (c === 'high' || c === 'confirmed') return 'HIGH';
+    if (c === 'medium') return 'MEDIUM';
+    if (c === 'low') return 'LOW';
+  }
+  if (entry.externally_exploitable === true) return 'HIGH';
+  if (entry.externally_exploitable === false) return 'MEDIUM';
+  return 'HIGH';
+}
+
+/**
+ * Pull every JSON block tagged as an Exploitation Queue out of a shannon
+ * markdown document. Shannon's section headers look like:
+ *   ## 4. Exploitation Queue
+ *   ## 5. Exploitation Queue
+ *   ## 7. Exploitation Queue (JSON)
+ * and the JSON is the FIRST fenced ```json block after the header. A
+ * deliverable that found nothing emits `[]` there; we skip empty arrays.
+ *
+ * Returns a flat list of queue entries across all deliverables merged into
+ * the input string. The caller dedupes by fingerprint.
+ */
+export function extractExploitationQueueEntries(raw: string): ShannonQueueEntry[] {
+  const entries: ShannonQueueEntry[] = [];
+  // Matches: `## <anything> Exploitation Queue <anything>\n<anything>\n\`\`\`json\n<captured JSON>\n\`\`\``
+  // The /g + explicit indexing lets us scan multiple queue sections.
+  const QUEUE_RE = /##[^\n]*Exploitation Queue[^\n]*\n([\s\S]*?)```json\s*\n([\s\S]*?)```/g;
+  let match = QUEUE_RE.exec(raw);
+  while (match !== null) {
+    // Regex has two capture groups; the second always exists when match
+    // succeeds. ESLint's narrower doesn't understand regex groups, so we
+    // assert via indexing.
+    const jsonBlock: string = match[2];
+    try {
+      const parsed: unknown = JSON.parse(jsonBlock);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item !== null && typeof item === 'object') {
+            entries.push(item as ShannonQueueEntry);
+          }
+        }
+      }
+    } catch {
+      // Shannon occasionally emits prose inside its json fence on failed
+      // runs — ignore and continue to the next queue section.
+    }
+    match = QUEUE_RE.exec(raw);
+  }
+  return entries;
+}
+
+function buildFindingFromQueueEntry(entry: ShannonQueueEntry): NormalizedFinding | null {
+  const id = entry.ID?.trim();
+  if (id === undefined || id === '') return null;
+
+  const vulnType = entry.vulnerability_type?.replace(/_/g, ' ').trim() ?? 'Shannon finding';
+  const endpoint = entry.source_endpoint?.trim();
+  const title = `${id}: ${vulnType}`;
+
+  // Build a description that captures the most important shannon fields
+  // without dumping everything. Trimmed to ~2 KB so it fits in a SQLite row
+  // and the markdown renderer without bloat.
+  const parts: string[] = [];
+  if (entry.missing_defense !== undefined) {
+    parts.push(`**Missing defense:** ${entry.missing_defense}`);
+  }
+  if (entry.exploitation_hypothesis !== undefined) {
+    parts.push(`**Exploitation path:** ${entry.exploitation_hypothesis}`);
+  }
+  if (entry.vulnerable_code_location !== undefined) {
+    parts.push(`**Location:** ${entry.vulnerable_code_location}`);
+  }
+  if (entry.suggested_exploit_technique !== undefined) {
+    parts.push(`**Technique:** ${entry.suggested_exploit_technique}`);
+  }
+  if (entry.confidence !== undefined) {
+    parts.push(`**Confidence:** ${entry.confidence}`);
+  }
+  if (entry.notes !== undefined) {
+    parts.push(`**Notes:** ${entry.notes}`);
+  }
+  const description = parts.join('\n\n').slice(0, 2000) || `Shannon finding ${id}`;
+
+  const exploitProofParts: string[] = [];
+  if (entry.exploitation_hypothesis !== undefined) exploitProofParts.push(entry.exploitation_hypothesis);
+  if (entry.notes !== undefined) exploitProofParts.push(entry.notes);
+  const exploitProof =
+    exploitProofParts.length > 0 ? exploitProofParts.join('\n\n').slice(0, 2000) : 'see Shannon report';
+
+  return {
+    scanner: 'shannon',
+    fingerprint: shortHash(`shannon:${id}:${endpoint ?? ''}`),
+    title,
+    description,
+    severity: severityFromEntry(entry),
+    category: SHANNON_CATEGORY,
+    normalizedScore: 0,
+    endpoint,
+    exploitProof,
+  };
+}
+
 function extractSections(raw: string): string[] {
   const sections: string[] = [];
   const lines = raw.split('\n');
@@ -313,7 +459,23 @@ export class ShannonScanner extends BaseScanner {
   public parseOutput(raw: string): readonly NormalizedFinding[] {
     if (raw.trim() === '') return [];
     const findings: NormalizedFinding[] = [];
+    const seen = new Set<string>();
 
+    // 1. Preferred path: shannon's per-phase deliverables contain
+    //    structured JSON queues under `## N. Exploitation Queue` sections.
+    //    Each queue entry is a typed vulnerability with stable field names
+    //    (ID, vulnerability_type, source_endpoint, missing_defense, …).
+    for (const entry of extractExploitationQueueEntries(raw)) {
+      const finding = buildFindingFromQueueEntry(entry);
+      if (finding === null || seen.has(finding.fingerprint)) continue;
+      seen.add(finding.fingerprint);
+      findings.push(finding);
+    }
+
+    // 2. Legacy / sample-report path: old shannon format where each vuln
+    //    is a `## Finding N: <title>` section with bullet fields. Kept for
+    //    backward compatibility and for the unit-test fixtures that ship
+    //    with this scanner.
     for (const section of extractSections(raw)) {
       const titleMatch = SECTION_RE.exec(section);
       if (titleMatch === null) continue;
@@ -327,10 +489,13 @@ export class ShannonScanner extends BaseScanner {
       const target = targetMatch?.[1]?.trim();
       const proofRaw = proofMatch?.[1]?.trim() ?? '';
       const exploitProof = proofRaw === '' ? 'see Shannon report' : proofRaw;
+      const fingerprint = shortHash(`shannon:${title}:${target ?? ''}`);
+      if (seen.has(fingerprint)) continue;
+      seen.add(fingerprint);
 
       findings.push({
         scanner: this.name,
-        fingerprint: shortHash(`shannon:${title}:${target ?? ''}`),
+        fingerprint,
         title,
         description: `Shannon DAST: ${title}`,
         severity,

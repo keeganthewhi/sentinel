@@ -8,7 +8,18 @@ describe('buildDockerArgs', () => {
       command: ['trivy', 'fs', '/workspace'],
       timeoutMs: 30000,
     });
-    expect(args).toEqual(['run', '--rm', 'sentinel-scanner:latest', 'trivy', 'fs', '/workspace']);
+    // Default --memory and --cpus are always included unless explicitly
+    // disabled; resource caps are on-by-default.
+    expect(args).toEqual([
+      'run',
+      '--rm',
+      '--memory=4g',
+      '--cpus=2',
+      'sentinel-scanner:latest',
+      'trivy',
+      'fs',
+      '/workspace',
+    ]);
   });
 
   it('adds a read-only workspace mount when workspaceRepo is set', () => {
@@ -21,6 +32,8 @@ describe('buildDockerArgs', () => {
     expect(args).toEqual([
       'run',
       '--rm',
+      '--memory=4g',
+      '--cpus=2',
       '-v',
       '/host/path/to/repo:/workspace:ro',
       'sentinel-scanner:latest',
@@ -59,5 +72,30 @@ describe('buildDockerArgs', () => {
     expect(args).toContain('arg with space');
     // No element contains the `&&` or `|` chain characters.
     expect(args.every((a) => typeof a === 'string')).toBe(true);
+  });
+
+  it('honors explicit memory and cpu limits', () => {
+    const args = buildDockerArgs({
+      image: 'img',
+      command: ['cmd'],
+      timeoutMs: 1000,
+      memoryLimit: '2g',
+      cpuLimit: '1',
+    });
+    expect(args).toContain('--memory=2g');
+    expect(args).toContain('--cpus=1');
+  });
+
+  it('disables resource limits when passed an empty string', () => {
+    const args = buildDockerArgs({
+      image: 'img',
+      command: ['cmd'],
+      timeoutMs: 1000,
+      memoryLimit: '',
+      cpuLimit: '',
+    });
+    expect(args).not.toContain('--memory=');
+    expect(args.some((a) => a.startsWith('--memory='))).toBe(false);
+    expect(args.some((a) => a.startsWith('--cpus='))).toBe(false);
   });
 });

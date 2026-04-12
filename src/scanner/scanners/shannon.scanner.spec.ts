@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ShannonScanner } from './shannon.scanner.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { ShannonScanner, extractExploitationQueueEntries } from './shannon.scanner.js';
 
 const scanner = new ShannonScanner();
+const FIXTURES_DIR = join(process.cwd(), 'test/fixtures/shannon');
 
 describe('ShannonScanner', () => {
   it('parseOutput returns [] for empty input', () => {
@@ -99,5 +102,43 @@ describe('ShannonScanner', () => {
     expect(scanner.name).toBe('shannon');
     expect(scanner.phase).toBe(3);
     expect(scanner.requiresUrl).toBe(true);
+  });
+
+  describe('extractExploitationQueueEntries', () => {
+    it('pulls every queue entry from a real auth_analysis deliverable', () => {
+      const raw = readFileSync(join(FIXTURES_DIR, 'auth_analysis.md'), 'utf8');
+      const entries = extractExploitationQueueEntries(raw);
+      expect(entries.length).toBeGreaterThanOrEqual(5);
+      const ids = entries.map((e) => e.ID);
+      expect(ids).toContain('AUTH-VULN-01');
+      expect(ids).toContain('AUTH-VULN-05');
+      // Every real queue entry should carry a source_endpoint
+      for (const e of entries) {
+        expect(e.source_endpoint).toBeDefined();
+      }
+    });
+
+    it('returns [] on an injection deliverable with an empty exploitation queue', () => {
+      const raw = readFileSync(join(FIXTURES_DIR, 'injection_analysis.md'), 'utf8');
+      const entries = extractExploitationQueueEntries(raw);
+      // injection_analysis.md on primaspec.com has an empty queue — zero
+      // exploitable injection findings survived analysis
+      expect(entries).toEqual([]);
+    });
+  });
+
+  describe('parseOutput with real shannon deliverables', () => {
+    it('parses the auth_analysis deliverable into normalized findings', () => {
+      const raw = readFileSync(join(FIXTURES_DIR, 'auth_analysis.md'), 'utf8');
+      const findings = scanner.parseOutput(raw);
+      expect(findings.length).toBeGreaterThanOrEqual(5);
+      const titles = findings.map((f) => f.title);
+      expect(titles.some((t) => t.startsWith('AUTH-VULN-01'))).toBe(true);
+      const first = findings[0];
+      expect(first?.scanner).toBe('shannon');
+      expect(first?.category).toBe('dast');
+      expect(first?.endpoint).toBeDefined();
+      expect(first?.description).toContain('Missing defense');
+    });
   });
 });

@@ -29,6 +29,7 @@ const VERSION = '0.1.0';
 interface StartCliFlags {
   readonly repo: string;
   readonly url?: string;
+  readonly openapi?: string;
   readonly governed?: boolean;
   readonly phases?: string;
   readonly verbose?: boolean;
@@ -62,6 +63,7 @@ export function buildProgram(): Command {
     .description('run an end-to-end security scan')
     .requiredOption('--repo <path>', 'absolute path to the repo to scan')
     .option('--url <url>', 'optional target URL for active scanners (subfinder/httpx/nuclei/nmap; without it shannon falls back to code-only mode)')
+    .option('--openapi <urlOrPath>', 'explicit OpenAPI spec URL or file path for schemathesis; omit to auto-discover at common paths')
     .option('--governed', 'enable AI mode: governor plan/evaluation/report + Phase 3 Shannon exploitation', false)
     .option('--phases <list>', 'comma-separated phase numbers — advanced escape hatch (e.g. 1,2 or 1,2,3). Governed mode defaults to 1,2,3; non-governed to 1,2.')
     .option('--verbose', 'verbose logging', false)
@@ -71,6 +73,7 @@ export function buildProgram(): Command {
         const code = await runStartCommand({
           repo: flags.repo,
           url: flags.url,
+          openApiSpec: flags.openapi,
           governed: flags.governed === true,
           phases,
           verbose: flags.verbose === true,

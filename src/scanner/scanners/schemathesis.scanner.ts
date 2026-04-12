@@ -2,7 +2,18 @@
  * Schemathesis scanner — API fuzzer with JUnit XML output.
  *
  * Command: `schemathesis run --base-url <url> <spec> --checks all --junit-xml -`
- * Only runs when `context.openApiSpec` is set.
+ *
+ * Spec resolution order:
+ *   1. `context.openApiSpec` — explicit path or URL passed via `--openapi`
+ *   2. Auto-discovery: probe the target URL for common OpenAPI paths
+ *      (/openapi.json, /openapi.yaml, /swagger.json, /api-docs, /v3/api-docs)
+ *      and use the first one that returns a 2xx with valid JSON/YAML.
+ *   3. Skip with a clear reason if neither path yields a spec.
+ *
+ * Auto-discovery is performed BEFORE docker spawn, from the sentinel host
+ * process — it's a handful of HEAD requests via Node's fetch, no container
+ * cost. The discovered URL is then passed to schemathesis inside the
+ * container via a mounted positional argument.
  *
  * JUnit XML is parsed via `parseXml` — handles both single-suite and nested
  * suites-of-suites forms. `fast-xml-parser` returns a plain object for
@@ -12,6 +23,7 @@
 
 import { parseXml, ParseError } from '../../execution/output-parser.js';
 import { shortHash } from './fingerprint.helper.js';
+import { createLogger } from '../../common/logger.js';
 import {
   BaseScanner,
   type ScanContext,
@@ -19,6 +31,77 @@ import {
 } from '../types/scanner.interface.js';
 import type { NormalizedFinding } from '../types/finding.interface.js';
 import { runScannerInDocker, withFindings } from './runner.helper.js';
+
+const logger = createLogger({ module: 'scanner.schemathesis' });
+
+/**
+ * Common paths where web frameworks serve OpenAPI/Swagger specs. Ordered
+ * by prevalence — NestJS @nestjs/swagger defaults to `/api-json`, FastAPI
+ * to `/openapi.json`, Spring / Springdoc to `/v3/api-docs`, many CLIs to
+ * `/swagger.json`. The probe stops as soon as one returns 2xx.
+ */
+const OPENAPI_PROBE_PATHS: readonly string[] = Object.freeze([
+  '/openapi.json',
+  '/openapi.yaml',
+  '/openapi.yml',
+  '/swagger.json',
+  '/swagger.yaml',
+  '/v3/api-docs',
+  '/api-docs',
+  '/api-json',
+  '/api/openapi.json',
+  '/api/docs/openapi.json',
+]);
+
+/** Probe timeout — short enough that a missing spec doesn't hold up Phase 2. */
+const PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * GET each candidate path against the target host; return the first URL
+ * whose response is a 2xx with a JSON or YAML body that looks like an
+ * OpenAPI spec (starts with `{` or `openapi:` or `swagger:`). Returns the
+ * absolute URL of the discovered spec, or null if nothing matched.
+ *
+ * Exported for testing.
+ */
+export async function discoverOpenApiSpec(targetUrl: string): Promise<string | null> {
+  let base: URL;
+  try {
+    base = new URL(targetUrl);
+  } catch {
+    return null;
+  }
+  for (const probePath of OPENAPI_PROBE_PATHS) {
+    const candidate = new URL(probePath, base).toString();
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+      }, PROBE_TIMEOUT_MS);
+      const response = await fetch(candidate, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: { Accept: 'application/json,application/yaml,*/*' },
+      });
+      clearTimeout(timer);
+      if (!response.ok) continue;
+      const body = (await response.text()).slice(0, 4096).trim();
+      if (
+        body.startsWith('{') ||
+        body.startsWith('openapi:') ||
+        body.startsWith('swagger:') ||
+        body.startsWith('---')
+      ) {
+        logger.info({ candidate }, 'auto-discovered OpenAPI spec');
+        return candidate;
+      }
+    } catch {
+      // timeout / DNS / TLS — next candidate
+    }
+  }
+  return null;
+}
 
 interface JUnitFailure {
   readonly message?: string;
@@ -70,23 +153,42 @@ export class SchemathesisScanner extends BaseScanner {
   public readonly requiresUrl = true;
 
   public async execute(context: ScanContext): Promise<ScannerResult> {
-    if (context.openApiSpec === undefined || context.targetUrl === undefined) {
+    if (context.targetUrl === undefined || context.targetUrl.trim() === '') {
       return {
         scanner: this.name,
         findings: [],
         rawOutput: '',
         executionTimeMs: 0,
         success: true,
-        error: 'skipped: requires openApiSpec + targetUrl',
+        error: 'skipped: schemathesis requires targetUrl',
       };
     }
+
+    // 1. Explicit spec wins.
+    // 2. Otherwise probe the target for common OpenAPI paths.
+    let specUrl = context.openApiSpec;
+    if (specUrl === undefined || specUrl.trim() === '') {
+      specUrl = (await discoverOpenApiSpec(context.targetUrl)) ?? undefined;
+    }
+    if (specUrl === undefined) {
+      return {
+        scanner: this.name,
+        findings: [],
+        rawOutput: '',
+        executionTimeMs: 0,
+        success: true,
+        error:
+          'skipped: no OpenAPI spec — none of /openapi.json, /openapi.yaml, /swagger.json, /v3/api-docs, /api-docs returned a valid document. Pass --openapi <url> to override.',
+      };
+    }
+
     // Schemathesis exits non-zero when checks fail; we want the JUnit XML either way.
     const command = [
       'schemathesis',
       'run',
       '--base-url',
       context.targetUrl,
-      context.openApiSpec,
+      specUrl,
       '--checks',
       'all',
       '--junit-xml',

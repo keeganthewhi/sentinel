@@ -42,7 +42,27 @@ export interface DockerRunOptions {
    * generates one automatically if the caller leaves this undefined.
    */
   readonly containerName?: string;
+  /**
+   * Per-container memory cap (e.g. `'4g'`, `'512m'`). Passed through as
+   * `docker run --memory=<value>`. Defaults to `'4g'` when omitted so a
+   * single runaway scanner can't OOM-kill the host. Set to the empty
+   * string to explicitly disable the cap.
+   */
+  readonly memoryLimit?: string;
+  /**
+   * Per-container CPU cap in virtual CPUs (e.g. `'2'`, `'1.5'`). Passed
+   * through as `docker run --cpus=<value>`. Defaults to `'2'`. Set to
+   * the empty string to disable.
+   */
+  readonly cpuLimit?: string;
 }
+
+/** Defaults applied when caller doesn't specify. Tuned for a laptop with
+ *  16 GB RAM and 8 cores running 5 concurrent Phase 1 scanners: 5 × 4 GB
+ *  is oversubscribed (by design — scanners rarely hit the cap), but it
+ *  keeps a single bad actor from grabbing everything. */
+const DEFAULT_MEMORY_LIMIT = '4g';
+const DEFAULT_CPU_LIMIT = '2';
 
 export interface DockerRunResult {
   readonly exitCode: number | null;
@@ -61,6 +81,18 @@ export function buildDockerArgs(options: DockerRunOptions): string[] {
 
   if (options.containerName !== undefined) {
     args.push('--name', options.containerName);
+  }
+
+  // Per-container resource limits — defaults apply unless caller passes
+  // an empty string to explicitly disable. Keeps a runaway scanner from
+  // eating the host's entire memory or CPU budget.
+  const memory = options.memoryLimit ?? DEFAULT_MEMORY_LIMIT;
+  if (memory !== '') {
+    args.push(`--memory=${memory}`);
+  }
+  const cpus = options.cpuLimit ?? DEFAULT_CPU_LIMIT;
+  if (cpus !== '') {
+    args.push(`--cpus=${cpus}`);
   }
 
   // Prefer volume over host path when both are set — the volume is faster on

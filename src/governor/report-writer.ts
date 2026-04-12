@@ -45,6 +45,18 @@ export class ReportWriter {
    */
   private static readonly REPORT_WRITER_TIMEOUT_MS = 10 * 60 * 1000;
 
+  /**
+   * Minimum fraction of citation fingerprints that must match an actual
+   * finding for the AI-authored report to be accepted. Strict 100% match was
+   * too brittle — claude occasionally drops or invents a single fingerprint
+   * among many correct ones, and we'd trash the whole ~30 KB report. 75%
+   * keeps the fail-safe against full-blown hallucination (if claude invents
+   * the entire citation list, validRatio collapses toward 0) while letting
+   * real reports through with their minor imperfections. Invariant #7
+   * (mechanical fallback on governor failure) still holds below threshold.
+   */
+  private static readonly MIN_VALID_CITATION_RATIO = 0.75;
+
   public async write(request: ReportWriterRequest): Promise<ReportWriterResult> {
     const prompt = buildReportPrompt(request.promptInput);
     try {
@@ -54,10 +66,40 @@ export class ReportWriter {
       const cleaned = extractJsonObject(response);
       const decision = parseJson(cleaned, REPORT_SCHEMA, 'governor.report-writer');
       const validFingerprints = new Set(request.promptInput.findings.map((f) => f.fingerprint));
-      const allCitationsValid = decision.citationFingerprints.every((fp) => validFingerprints.has(fp));
-      if (!allCitationsValid) {
-        this.logger.warn({}, 'report-writer hallucinated citations — falling back to mechanical');
+
+      const cited = decision.citationFingerprints;
+      if (cited.length === 0) {
+        // No citations — accept as-is. This is a legitimate AI-authored
+        // report on an empty finding set ("no critical findings" summary).
+        return { markdown: decision.markdown, aiAuthored: true };
+      }
+      const validCited = cited.filter((fp) => validFingerprints.has(fp));
+      const invalidCited = cited.filter((fp) => !validFingerprints.has(fp));
+      const validRatio = validCited.length / cited.length;
+
+      if (validRatio < ReportWriter.MIN_VALID_CITATION_RATIO) {
+        this.logger.warn(
+          {
+            citationCount: cited.length,
+            validCount: validCited.length,
+            validRatio,
+            invalidSample: invalidCited.slice(0, 5),
+          },
+          'report-writer hallucinated too many citations — falling back to mechanical',
+        );
         return this.fallback(request.fallbackInput);
+      }
+
+      if (invalidCited.length > 0) {
+        this.logger.info(
+          {
+            citationCount: cited.length,
+            validCount: validCited.length,
+            invalidCount: invalidCited.length,
+            validRatio,
+          },
+          'report-writer has minor citation drift — accepting AI-authored markdown',
+        );
       }
       return { markdown: decision.markdown, aiAuthored: true };
     } catch (err) {

@@ -31,6 +31,7 @@ import type { ScanSummary } from '../../pipeline/types.js';
 export interface StartOptions {
   readonly repo: string;
   readonly url?: string;
+  readonly openApiSpec?: string;
   readonly governed?: boolean;
   readonly phases?: readonly (1 | 2 | 3)[];
   readonly verbose?: boolean;
@@ -73,6 +74,7 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     scanId,
     targetRepo: repoAbs,
     targetUrl: options.url,
+    openApiSpec: options.openApiSpec,
     governed: options.governed ?? false,
     // 12-hour per-scanner budget. This is an UPPER BOUND, not a wait — Phase
     // 1 and Phase 2 scanners still finish in single-digit minutes against a
