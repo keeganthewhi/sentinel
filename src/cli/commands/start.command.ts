@@ -242,6 +242,15 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     rootLogger.error({ scanId, err: message }, 'scan failed');
+    // Classify errors into the exit code taxonomy from CLAUDE.md:
+    //   2 = prerequisite missing (Docker, scanner image)
+    //   3 = invalid arguments / config
+    //   4 = governor failed irrecoverably in governed mode
+    const { ConfigValidationError, DockerNotRunningError, GovernorTimeoutError } =
+      await import('../../common/errors.js');
+    if (err instanceof ConfigValidationError) return 3;
+    if (err instanceof DockerNotRunningError) return 2;
+    if (err instanceof GovernorTimeoutError) return 4;
     return 1;
   }
 }

@@ -14,6 +14,7 @@ describe('buildDockerArgs', () => {
       'run',
       '--rm',
       '--security-opt=no-new-privileges',
+      '--cap-drop=ALL',
       '--memory=4g',
       '--cpus=2',
       'sentinel-scanner:latest',
@@ -34,6 +35,7 @@ describe('buildDockerArgs', () => {
       'run',
       '--rm',
       '--security-opt=no-new-privileges',
+      '--cap-drop=ALL',
       '--memory=4g',
       '--cpus=2',
       '-v',
@@ -86,6 +88,29 @@ describe('buildDockerArgs', () => {
     });
     expect(args).toContain('--memory=2g');
     expect(args).toContain('--cpus=1');
+  });
+
+  it('adds --cap-add flags when capAdd is specified', () => {
+    const args = buildDockerArgs({
+      image: 'img',
+      command: ['nmap', '-sV', 'target'],
+      timeoutMs: 1000,
+      capAdd: ['NET_RAW'],
+    });
+    const capDropIdx = args.indexOf('--cap-drop=ALL');
+    const capAddIdx = args.indexOf('--cap-add=NET_RAW');
+    expect(capDropIdx).toBeGreaterThan(-1);
+    expect(capAddIdx).toBeGreaterThan(capDropIdx);
+  });
+
+  it('adds --network=none when network option is set', () => {
+    const args = buildDockerArgs({
+      image: 'img',
+      command: ['trivy', 'fs', '/workspace'],
+      timeoutMs: 1000,
+      network: 'none',
+    });
+    expect(args).toContain('--network=none');
   });
 
   it('disables resource limits when passed an empty string', () => {

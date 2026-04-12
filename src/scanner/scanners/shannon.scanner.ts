@@ -643,6 +643,10 @@ export class ShannonScanner extends BaseScanner {
                 if (upper === 'OPENAI_API_KEY') return false;
                 if (upper === 'OPENROUTER_API_KEY') return false;
                 if (upper === 'ANTHROPIC_API_KEY') return false;
+                // Block connection strings that may contain credentials
+                // (e.g. PostgreSQL DATABASE_URL with user:password).
+                if (upper === 'DATABASE_URL') return false;
+                if (upper === 'REDIS_URL') return false;
                 return true;
               }),
             ),
@@ -655,12 +659,21 @@ export class ShannonScanner extends BaseScanner {
         },
       );
 
+      // Match DockerExecutor's 50 MB buffer cap. Shannon runs can last
+      // up to 12 hours — even moderate logging could accumulate gigabytes.
+      const MAX_BUFFER_BYTES = 50 * 1024 * 1024;
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
+      let stdoutSize = 0;
+      let stderrSize = 0;
       child.stdout.on('data', (chunk: Buffer) => {
+        stdoutSize += chunk.length;
+        if (stdoutSize > MAX_BUFFER_BYTES) return;
         stdoutChunks.push(chunk);
       });
       child.stderr.on('data', (chunk: Buffer) => {
+        stderrSize += chunk.length;
+        if (stderrSize > MAX_BUFFER_BYTES) return;
         stderrChunks.push(chunk);
       });
 

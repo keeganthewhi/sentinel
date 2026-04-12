@@ -38,13 +38,13 @@ export interface ScanContext {
   /** Scanner image tag, pulled from `ConfigService.runtime.scannerImage`. */
   readonly scannerImage: string;
   /** Populated by subfinder in Phase 1, consumed by httpx / nuclei / nmap. */
-  discoveredSubdomains?: readonly string[];
+  readonly discoveredSubdomains?: readonly string[];
   /** Populated by httpx in Phase 1, consumed by nuclei / schemathesis. */
-  discoveredEndpoints?: readonly string[];
-  phase1Findings?: readonly NormalizedFinding[];
-  phase2Findings?: readonly NormalizedFinding[];
+  readonly discoveredEndpoints?: readonly string[];
+  readonly phase1Findings?: readonly NormalizedFinding[];
+  readonly phase2Findings?: readonly NormalizedFinding[];
   /** Populated by governor phase-evaluator in Phase H, consumed by Shannon in Phase I. */
-  governorEscalations?: readonly string[];
+  readonly governorEscalations?: readonly string[];
 }
 
 export interface ScannerResult {

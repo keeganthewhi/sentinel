@@ -129,6 +129,7 @@ export class SemgrepScanner extends BaseScanner {
       context,
       command,
       nonZeroIsSuccess: true,
+      network: 'none',
     });
     if (!outcome.ok) return outcome.result;
 

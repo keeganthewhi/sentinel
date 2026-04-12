@@ -137,6 +137,7 @@ export class TrivyScanner extends BaseScanner {
       executor: this.executor,
       context,
       command,
+      network: 'none',
     });
     if (!outcome.ok) return outcome.result;
 

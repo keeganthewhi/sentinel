@@ -87,6 +87,9 @@ export class NucleiScanner extends BaseScanner {
         error: 'skipped: no targets',
       };
     }
+    // Filter out targets starting with '-' to prevent flag injection via
+    // crafted subdomain or endpoint values from upstream scanners.
+    const safeTargets = targets.filter((t) => !t.startsWith('-'));
     const command: string[] = [
       'nuclei',
       '-jsonl',
@@ -103,7 +106,7 @@ export class NucleiScanner extends BaseScanner {
       '-t',
       '/opt/nuclei-templates/http/exposed-panels/',
     ];
-    for (const t of targets) command.push('-u', t);
+    for (const t of safeTargets) command.push('-u', t);
     const outcome = await runScannerInDocker({
       scanner: this,
       executor: this.executor,
@@ -122,7 +125,7 @@ export class NucleiScanner extends BaseScanner {
 
   public parseOutput(raw: string): readonly NormalizedFinding[] {
     if (raw.trim() === '') return [];
-    const records = parseJsonLines(raw, NucleiLineSchema, this.name);
+    const records = parseJsonLines(raw, NucleiLineSchema, this.name, { lenient: true });
     const findings: NormalizedFinding[] = [];
 
     for (const record of records) {

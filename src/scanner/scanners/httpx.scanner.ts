@@ -55,10 +55,13 @@ export class HttpxScanner extends BaseScanner {
     // httpx accepts -u for a single URL or -l for a hosts file. To avoid mounting a writable file
     // into the container, we use repeated -u flags. The argv length is bounded by the discovery limit.
     const command: string[] = ['httpx', '-silent', '-json', '-status-code', '-tech-detect'];
-    if (target !== undefined) {
+    // Filter targets starting with '-' to prevent flag injection via
+    // crafted subdomain values from upstream scanners.
+    if (target !== undefined && !target.startsWith('-')) {
       command.push('-u', target);
     }
     for (const sub of subs) {
+      if (sub.startsWith('-')) continue;
       command.push('-u', sub);
     }
     const outcome = await runScannerInDocker({
@@ -80,7 +83,7 @@ export class HttpxScanner extends BaseScanner {
    */
   public collectEndpoints(raw: string): HttpxEndpoint[] {
     if (raw.trim() === '') return [];
-    const records = parseJsonLines(raw, HttpxLineSchema, this.name);
+    const records = parseJsonLines(raw, HttpxLineSchema, this.name, { lenient: true });
     return records.map((record) => ({
       url: record.url,
       statusCode: record.status_code,

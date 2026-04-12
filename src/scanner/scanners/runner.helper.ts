@@ -33,6 +33,10 @@ export interface RunOptions {
   readonly nonZeroIsSuccess?: boolean;
   /** When set, override the per-scan timeout for this specific scanner. */
   readonly timeoutMs?: number;
+  /** Additional Linux capabilities to grant after --cap-drop=ALL (e.g. ['NET_RAW'] for nmap). */
+  readonly capAdd?: readonly string[];
+  /** Docker network mode. Phase 1 scanners should use 'none' for isolation. */
+  readonly network?: 'none' | 'bridge';
 }
 
 export interface RunOutcome {
@@ -107,6 +111,8 @@ export async function runScannerInDocker(options: RunOptions): Promise<RunOutcom
       : { workspaceRepo: context.targetRepo }),
     timeoutMs: timeoutMs ?? context.scannerTimeoutMs,
     scanner: scanner.name,
+    ...(options.capAdd !== undefined && { capAdd: options.capAdd }),
+    ...(options.network !== undefined && { network: options.network }),
   });
 
   const success = runResult.exitCode === 0 || (nonZeroIsSuccess === true && runResult.exitCode !== null && !runResult.timedOut);

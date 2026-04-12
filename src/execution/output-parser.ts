@@ -49,17 +49,28 @@ export function parseJson<S extends z.ZodTypeAny>(
   return result.data as z.output<S>;
 }
 
+export interface ParseJsonLinesOptions {
+  /**
+   * When true, skip malformed lines instead of throwing. This prevents a
+   * single truncated line (e.g. from a mid-write container kill) from
+   * discarding all valid findings in the preceding lines.
+   */
+  readonly lenient?: boolean;
+}
+
 /**
  * Parse newline-delimited JSON — one object per line. Blank lines are
- * skipped without error. Any non-blank line that fails JSON.parse or
- * schema validation throws a ParseError with the failing line index
- * (1-based) for operator diagnosis.
+ * skipped without error. In strict mode (default), any non-blank line that
+ * fails JSON.parse or schema validation throws a ParseError. In lenient
+ * mode, bad lines are silently skipped so partial output is still usable.
  */
 export function parseJsonLines<S extends z.ZodTypeAny>(
   raw: string,
   schema: S,
   scanner?: string,
+  options?: ParseJsonLinesOptions,
 ): z.output<S>[] {
+  const lenient = options?.lenient === true;
   const results: z.output<S>[] = [];
   const lines = raw.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
@@ -69,6 +80,7 @@ export function parseJsonLines<S extends z.ZodTypeAny>(
     try {
       parsed = JSON.parse(line) as unknown;
     } catch (err) {
+      if (lenient) continue;
       throw new ParseError(`Invalid JSON on line ${i + 1}: ${(err as Error).message}`, {
         line: i + 1,
         scanner,
@@ -77,6 +89,7 @@ export function parseJsonLines<S extends z.ZodTypeAny>(
     }
     const validated = schema.safeParse(parsed);
     if (!validated.success) {
+      if (lenient) continue;
       throw new ParseError(
         `JSON line ${i + 1} failed schema validation: ${validated.error.message}`,
         { line: i + 1, scanner, cause: validated.error },
@@ -141,6 +154,9 @@ const xmlParser = new XMLParser({
   parseAttributeValue: true,
   trimValues: true,
   allowBooleanAttributes: true,
+  // Explicitly disable entity processing to guard against future
+  // library defaults changing. Scanner XML output is untrusted.
+  processEntities: false,
 });
 
 /** Parse arbitrary XML into a plain object. Consumer narrows via Zod or type guard. */

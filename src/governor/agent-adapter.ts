@@ -100,7 +100,24 @@ async function runCli(
   options: AgentQueryOptions,
 ): Promise<string> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const env = { ...process.env, NO_COLOR: '1', ...(options.env ?? {}) };
+  // Filter sensitive env vars from the governor subprocess. The governor
+  // CLI connects to external AI services — env vars could leak via request
+  // metadata or error logs on the AI provider side.
+  const filteredEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => {
+      const upper = key.toUpperCase();
+      if (upper.includes('API_KEY')) return false;
+      if (upper.includes('SECRET')) return false;
+      if (upper.includes('TOKEN') && upper !== 'CLAUDE_CODE_MAX_OUTPUT_TOKENS') return false;
+      if (upper.startsWith('AWS_')) return false;
+      if (upper.startsWith('GITHUB_')) return false;
+      if (upper === 'GOOGLE_APPLICATION_CREDENTIALS') return false;
+      if (upper === 'DATABASE_URL') return false;
+      if (upper === 'REDIS_URL') return false;
+      return true;
+    }),
+  );
+  const env = { ...filteredEnv, NO_COLOR: '1', ...(options.env ?? {}) };
 
   // Resolve to a full path so Node can exec the binary on Windows. If
   // resolution fails, fall back to the bare name and let spawn surface ENOENT.

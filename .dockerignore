@@ -1,0 +1,61 @@
+# Sentinel .dockerignore — prevents secrets and ephemeral state from
+# entering the scanner image build context.
+
+# Secrets / credentials
+.env
+.env.*
+
+# Runtime data (SQLite DB, scan findings, governor decisions)
+data/
+workspaces/
+
+# Dependencies (rebuilt inside container)
+node_modules/
+.pnpm-store/
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Git history (not needed in scanner image)
+.git/
+
+# Agent session state
+.claude-session.md
+
+# Governance / planning files (not needed in scanner image)
+plans/
+audits/
+docs/
+governor-templates/
+AGENTS.md
+AGENTS-full.md
+BLUEPRINT.md
+STATE.md
+FEATURES.md
+TESTS.md
+THREATS.md
+MANIFEST.json
+CLAUDE.md
+README.md
+
+# Shannon (Phase 3 tool, has its own build)
+tools/
+
+# Test / coverage artifacts
+coverage/
+.nyc_output/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3

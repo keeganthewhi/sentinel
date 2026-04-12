@@ -88,7 +88,7 @@ fi
 if ! docker image inspect "$SCANNER_IMAGE" >/dev/null 2>&1; then
   if [ -f docker/scanner.Dockerfile ]; then
     info "Building scanner image (this may take a few minutes on first run)"
-    docker build -t "$SCANNER_IMAGE" -f docker/scanner.Dockerfile . >/dev/null
+    docker build -t "$SCANNER_IMAGE" -f docker/scanner.Dockerfile .
   else
     info "WARNING: scanner image '${SCANNER_IMAGE}' not found and docker/scanner.Dockerfile is missing"
   fi
@@ -96,6 +96,7 @@ fi
 
 # 7. Prisma migrate (idempotent, tolerant)
 mkdir -p "$DATA_DIR"
+chmod 700 "$DATA_DIR" 2>/dev/null || true
 if [ -d node_modules ]; then
   DATABASE_URL="$DATABASE_URL" pnpm exec prisma migrate deploy >/dev/null 2>&1 || true
 fi
@@ -145,13 +146,18 @@ case " $* " in
       fi
       # Wait for Temporal to be healthy (up to 60s)
       info "Waiting for Temporal to be ready..."
+      TEMPORAL_READY=0
       for i in $(seq 1 30); do
         if docker exec shannon-temporal temporal operator cluster health --address localhost:7233 2>/dev/null | grep -q SERVING; then
           info "Temporal is ready"
+          TEMPORAL_READY=1
           break
         fi
         sleep 2
       done
+      if [ "$TEMPORAL_READY" -eq 0 ]; then
+        info "WARNING: Temporal did not become ready within 60s — Shannon Phase 3 may fail"
+      fi
     fi
     ;;
 esac

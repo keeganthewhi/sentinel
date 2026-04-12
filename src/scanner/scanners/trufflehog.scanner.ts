@@ -83,6 +83,7 @@ export class TruffleHogScanner extends BaseScanner {
       context,
       command,
       nonZeroIsSuccess: true,
+      network: 'none',
     });
     if (!outcome.ok) return outcome.result;
 
@@ -101,7 +102,7 @@ export class TruffleHogScanner extends BaseScanner {
 
   public parseOutput(raw: string): readonly NormalizedFinding[] {
     if (raw.trim() === '') return [];
-    const records = parseJsonLines(raw, TrufflehogLineSchema, this.name);
+    const records = parseJsonLines(raw, TrufflehogLineSchema, this.name, { lenient: true });
     const findings: NormalizedFinding[] = [];
 
     for (const record of records) {

@@ -61,6 +61,17 @@ export class SubfinderScanner extends BaseScanner {
         error: `invalid targetUrl: ${context.targetUrl}`,
       };
     }
+    // Filter domains starting with '-' to prevent flag injection.
+    if (domain.startsWith('-')) {
+      return {
+        scanner: this.name,
+        findings: [],
+        rawOutput: '',
+        executionTimeMs: 0,
+        success: false,
+        error: `invalid domain: starts with dash`,
+      };
+    }
     const command = ['subfinder', '-silent', '-d', domain, '-json'];
     const outcome = await runScannerInDocker({
       scanner: this,
@@ -82,7 +93,7 @@ export class SubfinderScanner extends BaseScanner {
    */
   public collectSubdomains(raw: string): string[] {
     if (raw.trim() === '') return [];
-    const records = parseJsonLines(raw, SubfinderLineSchema, this.name);
+    const records = parseJsonLines(raw, SubfinderLineSchema, this.name, { lenient: true });
     const seen = new Set<string>();
     for (const record of records) {
       seen.add(record.host);

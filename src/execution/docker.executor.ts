@@ -55,6 +55,17 @@ export interface DockerRunOptions {
    * the empty string to disable.
    */
   readonly cpuLimit?: string;
+  /**
+   * Additional Linux capabilities to grant AFTER `--cap-drop=ALL`.
+   * Only used for scanners that need specific caps (e.g. nmap needs NET_RAW).
+   */
+  readonly capAdd?: readonly string[];
+  /**
+   * Docker network mode. Defaults to `'bridge'` (Docker default).
+   * Phase 1 scanners that only need filesystem access should use `'none'`
+   * to prevent a compromised scanner from exfiltrating data.
+   */
+  readonly network?: 'none' | 'bridge';
 }
 
 /** Defaults applied when caller doesn't specify. Tuned for a laptop with
@@ -86,20 +97,21 @@ export function buildDockerArgs(options: DockerRunOptions): string[] {
   // Container hardening — defense in depth.
   //   --security-opt=no-new-privileges — prevents privilege escalation via
   //     setuid/setgid binaries inside the container.
-  //   --cap-drop=ALL — (applied from the caller if needed) drops all Linux
-  //     capabilities by default.
+  //   --cap-drop=ALL — drops all Linux capabilities by default. Scanners
+  //     that need specific caps (e.g. nmap needs NET_RAW) add them back
+  //     via the `capAdd` option.
+  //   --network=none — Phase 1 scanners set this to prevent exfiltration.
   //   --memory / --cpus — per-container resource caps (defaults below).
-  //
-  // NOTE: --read-only is NOT used for scanner containers. Scanners require
-  // writable filesystem for their own cache/config:
-  //   - Trivy: ~/.cache/trivy/db/ (vulnerability DB downloaded on first run)
-  //   - Semgrep: ~/.semgrep/ (rule cache, metrics)
-  //   - Nuclei: ~/.config/nuclei/ (template metadata)
-  // The workspace volume is already mounted :ro, which is the important
-  // protection (scanners can't modify the target repo). The other
-  // hardening flags (no-new-privileges, cap-drop, resource limits) bound
-  // the blast radius if a scanner is compromised.
   args.push('--security-opt=no-new-privileges');
+  args.push('--cap-drop=ALL');
+  if (options.capAdd !== undefined) {
+    for (const cap of options.capAdd) {
+      args.push(`--cap-add=${cap}`);
+    }
+  }
+  if (options.network !== undefined) {
+    args.push(`--network=${options.network}`);
+  }
 
   const memory = options.memoryLimit ?? DEFAULT_MEMORY_LIMIT;
   if (memory !== '') {
@@ -174,6 +186,10 @@ export class DockerExecutor {
       let stdoutSize = 0;
       let stderrSize = 0;
       let bufferOverflow = false;
+      // Guard against double-finalization: when buffer overflow triggers
+      // child.kill(), both 'error' and 'close' events fire. The first
+      // finalize settles the promise; the second is silently ignored.
+      let finalized = false;
 
       child.stdout.on('data', (chunk: Buffer) => {
         stdoutSize += chunk.length;
@@ -197,6 +213,8 @@ export class DockerExecutor {
       });
 
       const finalize = (exitCode: number | null, timedOut: boolean): void => {
+        if (finalized) return;
+        finalized = true;
         clearTimeout(timer);
         const durationMs = Date.now() - startedAt;
         const stdout = Buffer.concat(stdoutChunks).toString('utf8');

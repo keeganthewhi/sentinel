@@ -17,11 +17,15 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { NormalizedFinding } from '../scanner/types/finding.interface.js';
 import type { ScanContext } from '../scanner/types/scanner.interface.js';
 
-const CONTRACT_PATH = join('governor-templates', 'CLAUDE.md');
+// Resolve relative to the package root (two levels up from src/governor/),
+// not process.cwd(), so the contract is found regardless of invocation directory.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CONTRACT_PATH = join(__dirname, '..', '..', 'governor-templates', 'CLAUDE.md');
 
 let cachedContract: string | null = null;
 

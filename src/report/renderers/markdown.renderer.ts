@@ -39,7 +39,9 @@ function escapeMarkdown(input: string): string {
   return input
     .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
-    .replace(/`/g, '\\`');
+    .replace(/`/g, '\\`')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function severityBadge(severity: Severity): string {

@@ -22,9 +22,9 @@
 #   Schemathesis    3.36.3  (via pip — installed BEFORE PD suite so its httpx dep
 #                            does not overwrite projectdiscovery/httpx)
 #   TruffleHog      3.83.7
-#   Subfinder       latest  (resolved via GitHub API at build time)
-#   httpx (PD)      latest  (resolved via GitHub API; installed LAST for precedence)
-#   Nuclei          latest  (resolved via GitHub API; installed LAST for precedence)
+#   Subfinder       2.6.7
+#   httpx (PD)      1.6.9   (installed LAST for argv[0] precedence over Python httpx)
+#   Nuclei          3.3.7   (installed LAST for precedence)
 #   nuclei-templates (git clone --depth 1 into /opt/nuclei-templates — deterministic)
 #   Nmap            apt-ship (Ubuntu 24.04 → 7.94)
 
@@ -91,11 +91,12 @@ RUN pip3 install --break-system-packages --no-cache-dir "schemathesis==${SCHEMAT
     && schemathesis --version
 
 # ---------- ProjectDiscovery suite (subfinder, httpx, nuclei) — installed LAST ----------
-# Resolved via the GitHub API so we always get the latest release rather than chasing
-# hand-pinned version numbers. `curl -f` fails fast on 4xx/5xx. Unauthenticated
-# rate limit (60/h per IP) is fine for local builds and CI.
+# Pinned to specific versions for reproducibility and supply-chain safety.
 # Installing AFTER pip guarantees that projectdiscovery/httpx wins the argv[0] race
 # against encode/httpx (the Python HTTP client).
+ARG SUBFINDER_VERSION=2.6.7
+ARG HTTPX_PD_VERSION=1.6.9
+ARG NUCLEI_VERSION=3.3.7
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
         amd64) PD_ARCH=amd64 ;; \
@@ -103,22 +104,30 @@ RUN set -eux; \
         *) echo "unsupported arch ${TARGETARCH}"; exit 1 ;; \
     esac; \
     cd /tmp; \
-    for name in subfinder httpx nuclei; do \
-        version=$(curl -fsSL "https://api.github.com/repos/projectdiscovery/${name}/releases/latest" | sed -n 's/.*"tag_name": "v\([^"]*\)".*/\1/p' | head -1); \
-        [ -n "$version" ] || { echo "failed to resolve ${name} latest version"; exit 1; }; \
-        curl -fsSL "https://github.com/projectdiscovery/${name}/releases/download/v${version}/${name}_${version}_linux_${PD_ARCH}.zip" -o "${name}.zip"; \
-        unzip -o "${name}.zip" -d /usr/local/bin "${name}"; \
-        chmod +x "/usr/local/bin/${name}"; \
-        rm "${name}.zip"; \
-    done; \
+    curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_${PD_ARCH}.zip" -o subfinder.zip; \
+    unzip -o subfinder.zip -d /usr/local/bin subfinder; \
+    chmod +x /usr/local/bin/subfinder; \
+    rm subfinder.zip; \
+    curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_PD_VERSION}/httpx_${HTTPX_PD_VERSION}_linux_${PD_ARCH}.zip" -o httpx.zip; \
+    unzip -o httpx.zip -d /usr/local/bin httpx; \
+    chmod +x /usr/local/bin/httpx; \
+    rm httpx.zip; \
+    curl -fsSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${PD_ARCH}.zip" -o nuclei.zip; \
+    unzip -o nuclei.zip -d /usr/local/bin nuclei; \
+    chmod +x /usr/local/bin/nuclei; \
+    rm nuclei.zip; \
     # Confirm ProjectDiscovery httpx is the one on PATH (not the python one).
     httpx -version 2>&1 | head -1
 
 # ---------- Nuclei templates via git clone (deterministic, no runtime network) ----------
-# Shallow clone of the template repo baked into the image at /opt/nuclei-templates.
+# Clone the template repo baked into the image at /opt/nuclei-templates.
+# Pinned to a specific commit for reproducibility and supply-chain safety.
 # Nuclei is invoked with `-t /opt/nuclei-templates/http/cves/` etc. from the scanner.
 # The git checkout is read by whoever runs nuclei; keep it world-readable.
-RUN git clone --depth 1 https://github.com/projectdiscovery/nuclei-templates.git /opt/nuclei-templates \
+ARG NUCLEI_TEMPLATES_COMMIT=main
+RUN git clone https://github.com/projectdiscovery/nuclei-templates.git /opt/nuclei-templates \
+    && cd /opt/nuclei-templates && git checkout "${NUCLEI_TEMPLATES_COMMIT}" \
+    && rm -rf .git \
     && chmod -R a+rX /opt/nuclei-templates \
     && du -sh /opt/nuclei-templates
 
@@ -141,5 +150,8 @@ LABEL org.sentinel.image.name="sentinel-scanner" \
       org.sentinel.image.semgrep="1.91.0" \
       org.sentinel.image.trufflehog="3.83.7" \
       org.sentinel.image.schemathesis="3.36.3" \
+      org.sentinel.image.subfinder="2.6.7" \
+      org.sentinel.image.httpx="1.6.9" \
+      org.sentinel.image.nuclei="3.3.7" \
       org.sentinel.image.nuclei-templates="git-head" \
       org.sentinel.image.nmap="apt"

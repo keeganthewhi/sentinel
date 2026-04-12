@@ -67,6 +67,9 @@ interface ProcResult {
   readonly timedOut: boolean;
 }
 
+/** Hard cap on buffered output — matches DockerExecutor's 50 MB limit. */
+const MAX_BUFFER_BYTES = 50 * 1024 * 1024;
+
 function runDocker(args: readonly string[], timeoutMs: number): Promise<ProcResult> {
   return new Promise((resolve) => {
     const controller = new AbortController();
@@ -81,10 +84,16 @@ function runDocker(args: readonly string[], timeoutMs: number): Promise<ProcResu
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
+    let stdoutSize = 0;
+    let stderrSize = 0;
     child.stdout.on('data', (chunk: Buffer) => {
+      stdoutSize += chunk.length;
+      if (stdoutSize > MAX_BUFFER_BYTES) return;
       stdoutChunks.push(chunk);
     });
     child.stderr.on('data', (chunk: Buffer) => {
+      stderrSize += chunk.length;
+      if (stderrSize > MAX_BUFFER_BYTES) return;
       stderrChunks.push(chunk);
     });
 
@@ -118,9 +127,6 @@ function tarToDockerCp(
 ): Promise<{ ok: boolean; detail: string }> {
   return new Promise((resolve) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => {
-      controller.abort();
-    }, timeoutMs);
 
     const tarArgs: string[] = ['-c', '-C', repoAbs];
     for (const ex of TAR_EXCLUDES) {
@@ -141,6 +147,14 @@ function tarToDockerCp(
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
+
+    // Set up timeout AFTER children are spawned so we can kill them explicitly.
+    const timer = setTimeout(() => {
+      controller.abort();
+      // Explicitly kill both children so they don't continue as orphans.
+      try { tarChild.kill('SIGTERM'); } catch { /* already dead */ }
+      try { cpChild.kill('SIGTERM'); } catch { /* already dead */ }
+    }, timeoutMs);
 
     tarChild.stdout.pipe(cpChild.stdin);
 

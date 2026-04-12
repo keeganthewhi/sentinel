@@ -182,6 +182,19 @@ export class SchemathesisScanner extends BaseScanner {
       };
     }
 
+    // Validate specUrl is a real URL to prevent flag injection.
+    try {
+      new URL(specUrl);
+    } catch {
+      return {
+        scanner: this.name,
+        findings: [],
+        rawOutput: '',
+        executionTimeMs: 0,
+        success: false,
+        error: `invalid openapi spec URL: ${specUrl}`,
+      };
+    }
     // Schemathesis exits non-zero when checks fail; we want the JUnit XML either way.
     const command = [
       'schemathesis',

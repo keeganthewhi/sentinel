@@ -63,7 +63,7 @@ export class PlanGenerator {
       const dir = join(options.workspacesRoot ?? 'workspaces', options.scanId);
       mkdirSync(dir, { recursive: true });
       const path = join(dir, 'BLUEPRINT.md');
-      writeFileSync(path, this.renderBlueprintMarkdown(decision), 'utf8');
+      writeFileSync(path, this.renderBlueprintMarkdown(decision), { encoding: 'utf8', mode: 0o600 });
     } catch (err) {
       this.logger.warn({ err: (err as Error).message }, 'failed to write per-scan BLUEPRINT.md');
     }

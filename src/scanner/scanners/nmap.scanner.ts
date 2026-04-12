@@ -99,12 +99,15 @@ export class NmapScanner extends BaseScanner {
         error: 'skipped: no hostnames to scan',
       };
     }
-    const command = ['nmap', '-sV', '--top-ports', '1000', '-oX', '-', ...targets];
+    // '--' terminates nmap flag parsing so a malicious subdomain starting
+    // with '-' (e.g. from a crafted DNS record) is never interpreted as a flag.
+    const command = ['nmap', '-sV', '--top-ports', '1000', '-oX', '-', '--', ...targets];
     const outcome = await runScannerInDocker({
       scanner: this,
       executor: this.executor,
       context,
       command,
+      capAdd: ['NET_RAW'],
     });
     if (!outcome.ok) return outcome.result;
     try {
