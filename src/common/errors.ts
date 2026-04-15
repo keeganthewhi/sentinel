@@ -93,7 +93,7 @@ export class ScannerCrashError extends SentinelError {
     'Inspect the scanner stderr in workspaces/<scanId>/deliverables/<scanner>.stderr; re-run with --verbose.';
 }
 
-/** Governor CLI query exceeded the 5-minute timeout. */
+/** Governor CLI query exceeded the 8-hour timeout. */
 export class GovernorTimeoutError extends SentinelError {
   public readonly code = 'GOVERNOR_TIMEOUT';
   public readonly remediation =

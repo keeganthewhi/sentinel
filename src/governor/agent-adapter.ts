@@ -13,7 +13,7 @@
  *   3. auto-detect: first of claude / cursor-agent / codex / gemini on PATH
  *
  * Critical invariants:
- *   - 5-minute hard timeout via AbortController (CLAUDE.md Invariant #7)
+ *   - 8-hour hard timeout via AbortController (CLAUDE.md Invariant #7)
  *   - argv array only — NEVER a shell string (Invariant #5)
  *   - Failure → typed error → caller (governor services) falls back to mechanical
  *
@@ -25,7 +25,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { GovernorInvalidResponseError, GovernorTimeoutError } from '../common/errors.js';
 import { createLogger } from '../common/logger.js';
 
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours — governor calls on large repos need generous time
 const IS_WINDOWS = process.platform === 'win32';
 
 const logger = createLogger({ module: 'governor.agent-adapter' });
@@ -81,7 +81,7 @@ interface SpawnConfig {
 }
 
 /**
- * Run a CLI subprocess with a 5-minute timeout. Pure helper every adapter
+ * Run a CLI subprocess with an 8-hour timeout. Pure helper every adapter
  * delegates to so timeout / abort / error handling lives in one place.
  */
 /**
@@ -121,8 +121,15 @@ async function runCli(
 
   // Resolve to a full path so Node can exec the binary on Windows. If
   // resolution fails, fall back to the bare name and let spawn surface ENOENT.
-  const resolved = resolveBin(config.bin) ?? config.bin;
+  let resolved = resolveBin(config.bin) ?? config.bin;
   const useShell = needsShell(resolved);
+
+  // When shell:true, cmd.exe interprets backslashes in the executable path as
+  // escape characters, mangling paths like C:\Users\... into C:Users...
+  // Forward slashes work correctly on Windows in both shell and non-shell mode.
+  if (useShell) {
+    resolved = resolved.replace(/\\/g, '/');
+  }
 
   // For stdin mode we pass no inline prompt — the prompt goes down stdin
   // which avoids the Windows 8191-char cmd.exe argv limit when running
