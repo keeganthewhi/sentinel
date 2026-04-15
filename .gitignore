@@ -45,6 +45,7 @@ coverage/
 
 # Agent session state (ephemeral, never committed)
 .claude-session.md
+.claude/
 
 # OS / editor artifacts
 .DS_Store
