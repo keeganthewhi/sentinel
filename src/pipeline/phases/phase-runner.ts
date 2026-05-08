@@ -21,6 +21,7 @@ import type { ProgressEmitter } from '../../report/progress/progress.emitter.js'
 import type { IPipelineRunner } from '../types.js';
 import type { StrategistRegistry } from '../../governor/strategist/strategist-registry.js';
 import type { AgentAdapter } from '../../governor/agent-adapter.js';
+import type { PhaseRunRepository } from '../../persistence/phase-run.repository.js';
 import { runScannerIterationLoop } from './scanner-iteration-loop.js';
 
 const logger = createLogger({ module: 'pipeline.phase-runner' });
@@ -35,6 +36,13 @@ export interface PhaseRunStrategistHooks {
   readonly strategistRegistry: StrategistRegistry;
   readonly adapter: AgentAdapter;
   readonly workspacesRoot: string;
+  /**
+   * Plan 018.5 — when provided, the phase runner upserts each scanner's
+   * iteration history into `PhaseRun.iterations`. Errors swallow with WARN;
+   * disk artifacts under `workspaces/<scanId>/per-tool/<scanner>/` remain the
+   * source of truth.
+   */
+  readonly phaseRunRepository?: PhaseRunRepository;
 }
 
 export async function runPhase(
@@ -105,6 +113,30 @@ export async function runPhase(
             },
             'strategist iteration loop completed',
           );
+          // Plan 018.5: lift iterations into Prisma. Best-effort — disk
+          // artifacts remain authoritative.
+          if (
+            strategistHooks.phaseRunRepository !== undefined &&
+            outcome.iterations.length > 0
+          ) {
+            try {
+              await strategistHooks.phaseRunRepository.upsertIterations({
+                scanId: context.scanId,
+                scanner: scanner.name,
+                phase,
+                iterations: outcome.iterations,
+              });
+            } catch (err) {
+              logger.warn(
+                {
+                  scanId: context.scanId,
+                  scanner: scanner.name,
+                  err: err instanceof Error ? err.message : String(err),
+                },
+                'iteration history persistence failed — disk artifacts retain history',
+              );
+            }
+          }
         } else {
           result = await runner.runScanner(scanner, context);
         }

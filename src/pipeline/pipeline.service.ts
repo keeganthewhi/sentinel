@@ -39,6 +39,7 @@ import { ReportWriter } from '../governor/report-writer.js';
 import { AGENT_ADAPTER } from '../governor/governor.module.js';
 import type { AgentAdapter } from '../governor/agent-adapter.js';
 import { StrategistRegistry } from '../governor/strategist/strategist-registry.js';
+import { PhaseRunRepository } from '../persistence/phase-run.repository.js';
 import {
   prepareWorkspaceVolume,
   removeWorkspaceVolume,
@@ -77,6 +78,7 @@ export class PipelineService {
     @Optional() private readonly reportWriter?: ReportWriter,
     @Optional() private readonly strategistRegistry?: StrategistRegistry,
     @Optional() @Inject(AGENT_ADAPTER) private readonly agentAdapter?: AgentAdapter,
+    @Optional() private readonly phaseRunRepository?: PhaseRunRepository,
   ) {}
 
   /**
@@ -91,6 +93,7 @@ export class PipelineService {
       strategistRegistry: this.strategistRegistry,
       adapter: this.agentAdapter,
       workspacesRoot,
+      ...(this.phaseRunRepository !== undefined && { phaseRunRepository: this.phaseRunRepository }),
     };
   }
 

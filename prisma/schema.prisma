@@ -53,6 +53,7 @@ model PhaseRun {
   findingCount Int       @default(0)
   rawOutput    String?
   errorLog     String?
+  iterations   Json      @default("[]")
 
   scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
 

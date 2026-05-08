@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ScannerModule } from '../scanner/scanner.module.js';
 import { GovernorModule } from '../governor/governor.module.js';
 import { StrategistModule } from '../governor/strategist/strategist.module.js';
+import { PersistenceModule } from '../persistence/persistence.module.js';
 import { InMemoryPipelineRunner } from './in-memory.runner.js';
 import { PipelineService } from './pipeline.service.js';
 import { ProgressEmitter } from '../report/progress/progress.emitter.js';
@@ -19,7 +20,7 @@ import { TerminalUI } from '../report/progress/terminal-ui.js';
  * `PipelineService.run(options, bullMqRunner)`.
  */
 @Module({
-  imports: [ScannerModule, GovernorModule, StrategistModule],
+  imports: [ScannerModule, GovernorModule, StrategistModule, PersistenceModule],
   providers: [InMemoryPipelineRunner, ProgressEmitter, TerminalUI, PipelineService],
   exports: [PipelineService, ProgressEmitter, TerminalUI],
 })
