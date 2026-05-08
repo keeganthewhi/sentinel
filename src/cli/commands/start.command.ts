@@ -15,7 +15,7 @@
  * directly with mocked deps.
  */
 
-import { mkdirSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync } from 'node:fs';
 import { join, resolve as resolvePath } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { rootLogger } from '../../common/logger.js';
@@ -164,6 +164,15 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
         : `Verdict: FAIL (${verdict.findingCount} findings)`,
     );
 
+    // Plan 019 — read per-tool AI narrate output written by the strategist
+    // iteration loop. Each registered strategist drops a narrate.md under
+    // workspaces/<scanId>/per-tool/<scanner>/. Absent = scanner had no
+    // strategist or governed mode was off; pass through as undefined.
+    const perToolReports = collectPerToolReports(
+      options.workspacesRoot ?? 'workspaces',
+      scanId,
+    );
+
     const reportInput = {
       scanId,
       findings: normalized,
@@ -171,6 +180,7 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
       targetRepo: repoAbs,
       verdict,
       ...(options.url !== undefined && { targetUrl: options.url }),
+      ...(perToolReports !== undefined && { perToolReports }),
     };
     // Prefer the governor's AI-authored markdown (if present and validated),
     // otherwise fall back to the mechanical renderer. JSON always comes from
@@ -277,6 +287,44 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     if (err instanceof GovernorTimeoutError) return 4;
     return 1;
   }
+}
+
+/**
+ * Read narrate.md from every workspaces/<scanId>/per-tool/<scanner>/ folder
+ * (plan 019). Returns undefined when the per-tool root does not exist (the
+ * scan ran without strategists). Returns an empty record when the root exists
+ * but no scanner produced output — caller treats that as "render no section."
+ */
+function collectPerToolReports(
+  workspacesRoot: string,
+  scanId: string,
+): Readonly<Record<string, string>> | undefined {
+  const perToolRoot = join(workspacesRoot, scanId, 'per-tool');
+  if (!existsSync(perToolRoot)) return undefined;
+
+  const out: Record<string, string> = {};
+  try {
+    for (const scanner of readdirSync(perToolRoot)) {
+      const narratePath = join(perToolRoot, scanner, 'narrate.md');
+      if (!existsSync(narratePath)) continue;
+      try {
+        const body = readFileSync(narratePath, 'utf8');
+        if (body.trim().length > 0) out[scanner] = body;
+      } catch (err) {
+        rootLogger.warn(
+          { scanner, narratePath, err: (err as Error).message },
+          'failed to read per-tool narrate.md — skipped',
+        );
+      }
+    }
+  } catch (err) {
+    rootLogger.warn(
+      { perToolRoot, err: (err as Error).message },
+      'failed to enumerate per-tool dir — skipping per-tool section',
+    );
+    return undefined;
+  }
+  return out;
 }
 
 /**

@@ -22,6 +22,13 @@ export interface ReportInput {
   readonly targetUrl?: string;
   /** Plan 020 — boolean PASS / FAIL verdict surfaced at the top of the report. */
   readonly verdict?: Verdict;
+  /**
+   * Plan 019 — per-tool AI strategist narrate output, keyed by scanner name.
+   * Each value is the markdown body produced by `BaseStrategist.narrate()` for
+   * that scanner (read from `workspaces/<scanId>/per-tool/<scanner>/narrate.md`).
+   * Absent / empty → no per-tool section in the report.
+   */
+  readonly perToolReports?: Readonly<Record<string, string>>;
 }
 
 const SEVERITIES: readonly Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
@@ -55,6 +62,33 @@ function countBySeverity(findings: readonly NormalizedFinding[]): Record<Severit
   const counts: Record<Severity, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
   for (const f of findings) counts[f.severity]++;
   return counts;
+}
+
+/**
+ * Render the per-tool AI report section. Each scanner's narrate output goes
+ * inside a `<details>` block so the final SENTINEL_REPORT.md stays scannable
+ * for operators while the prose remains one click away.
+ *
+ * Returns an empty array when the input has no non-empty entries, so callers
+ * can safely concatenate without producing dangling headings.
+ */
+function renderPerToolReports(reports: Readonly<Record<string, string>>): string[] {
+  const entries = Object.entries(reports)
+    .filter(([, body]) => body.trim().length > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return [];
+
+  const out: string[] = ['## Per-Tool AI Reports', ''];
+  for (const [scanner, body] of entries) {
+    out.push(`<details>`);
+    out.push(`<summary><strong>${escapeMarkdown(scanner)}</strong></summary>`);
+    out.push('');
+    out.push(body.trim());
+    out.push('');
+    out.push(`</details>`);
+    out.push('');
+  }
+  return out;
 }
 
 function groupByCategory(
@@ -101,6 +135,15 @@ export class MarkdownRenderer {
     if (input.findings.length === 0) {
       lines.push('_No findings._');
       lines.push('');
+      // Plan 019 — even with zero findings the per-tool narrate may carry
+      // value (a strategist explaining what was tried + why nothing fired).
+      // Render it after the summary, then return.
+      if (input.perToolReports !== undefined) {
+        const perToolBlock = renderPerToolReports(input.perToolReports);
+        if (perToolBlock.length > 0) {
+          lines.push(...perToolBlock);
+        }
+      }
       return lines.join('\n');
     }
 
@@ -112,6 +155,13 @@ export class MarkdownRenderer {
     }
     lines.push(`| **Total** | **${input.findings.length}** |`);
     lines.push('');
+
+    if (input.perToolReports !== undefined) {
+      const perToolBlock = renderPerToolReports(input.perToolReports);
+      if (perToolBlock.length > 0) {
+        lines.push(...perToolBlock);
+      }
+    }
 
     lines.push('## Findings');
     lines.push('');

@@ -83,4 +83,72 @@ describe('MarkdownRenderer', () => {
     });
     expect(out).toContain('pipe \\| in \\| title');
   });
+
+  // Plan 019 — per-tool AI strategist narrate section.
+
+  it('renders the verdict heading when verdict is provided (PASS path)', () => {
+    const out = renderer.render({ ...baseInput, verdict: { result: 'PASS', findingCount: 0 } });
+    expect(out).toMatch(/## Verdict: PASS/);
+  });
+
+  it('renders the verdict heading when verdict is provided (FAIL path)', () => {
+    const out = renderer.render({
+      ...baseInput,
+      findings: [make()],
+      verdict: { result: 'FAIL', findingCount: 1 },
+    });
+    expect(out).toMatch(/## Verdict: FAIL/);
+    expect(out).toContain('1 finding(s) require attention');
+  });
+
+  it('renders Per-Tool AI Reports section when perToolReports is populated', () => {
+    const out = renderer.render({
+      ...baseInput,
+      findings: [make()],
+      perToolReports: {
+        semgrep: '# Semgrep narrate body\n\nSome AI prose here.',
+        trivy: '# Trivy narrate body\n\nDifferent prose.',
+      },
+    });
+    expect(out).toContain('## Per-Tool AI Reports');
+    expect(out).toContain('<summary><strong>semgrep</strong></summary>');
+    expect(out).toContain('Semgrep narrate body');
+    expect(out).toContain('<summary><strong>trivy</strong></summary>');
+    expect(out).toContain('Trivy narrate body');
+  });
+
+  it('renders per-tool section even when findings is empty', () => {
+    const out = renderer.render({
+      ...baseInput,
+      perToolReports: { semgrep: '# Empty scan narrate' },
+    });
+    expect(out).toContain('## Per-Tool AI Reports');
+    expect(out).toContain('Empty scan narrate');
+  });
+
+  it('omits per-tool section when every report body is whitespace-only', () => {
+    const out = renderer.render({
+      ...baseInput,
+      findings: [make()],
+      perToolReports: { semgrep: '   \n\n  ' },
+    });
+    expect(out).not.toContain('## Per-Tool AI Reports');
+  });
+
+  it('orders per-tool sections alphabetically by scanner name', () => {
+    const out = renderer.render({
+      ...baseInput,
+      findings: [make()],
+      perToolReports: {
+        zap: 'zap body',
+        semgrep: 'semgrep body',
+        nuclei: 'nuclei body',
+      },
+    });
+    const semgrepIdx = out.indexOf('semgrep');
+    const nucleiIdx = out.indexOf('nuclei');
+    const zapIdx = out.indexOf('zap');
+    expect(nucleiIdx).toBeLessThan(semgrepIdx);
+    expect(semgrepIdx).toBeLessThan(zapIdx);
+  });
 });

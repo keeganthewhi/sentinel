@@ -17,6 +17,8 @@ export interface JsonReport {
   readonly durationMs: number;
   /** Plan 020 — boolean verdict surfaced as a top-level field. */
   readonly verdict?: Verdict;
+  /** Plan 019 — per-tool AI strategist narrate, keyed by scanner name. */
+  readonly perToolReports?: Readonly<Record<string, string>>;
   readonly summary: {
     readonly total: number;
     readonly bySeverity: Record<Severity, number>;
@@ -42,6 +44,7 @@ export class JsonRenderer {
       ...(input.targetUrl !== undefined && { targetUrl: input.targetUrl }),
       durationMs: input.durationMs,
       ...(input.verdict !== undefined && { verdict: input.verdict }),
+      ...(input.perToolReports !== undefined && { perToolReports: input.perToolReports }),
       summary: {
         total: input.findings.length,
         bySeverity,
