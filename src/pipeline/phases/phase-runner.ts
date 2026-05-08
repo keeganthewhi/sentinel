@@ -19,8 +19,23 @@ import type {
 import type { ScannerRegistry } from '../../scanner/scanner.registry.js';
 import type { ProgressEmitter } from '../../report/progress/progress.emitter.js';
 import type { IPipelineRunner } from '../types.js';
+import type { StrategistRegistry } from '../../governor/strategist/strategist-registry.js';
+import type { AgentAdapter } from '../../governor/agent-adapter.js';
+import { runScannerIterationLoop } from './scanner-iteration-loop.js';
 
 const logger = createLogger({ module: 'pipeline.phase-runner' });
+
+/**
+ * Optional strategist hooks. When all three are provided AND `context.governed`
+ * is true AND a scanner has a `strategistName`, the phase runner routes that
+ * scanner through the iteration loop. Missing any of these fields collapses
+ * to the legacy single-shot mechanical path.
+ */
+export interface PhaseRunStrategistHooks {
+  readonly strategistRegistry: StrategistRegistry;
+  readonly adapter: AgentAdapter;
+  readonly workspacesRoot: string;
+}
 
 export async function runPhase(
   phase: 1 | 2 | 3,
@@ -28,6 +43,7 @@ export async function runPhase(
   runner: IPipelineRunner,
   context: ScanContext,
   emitter: ProgressEmitter,
+  strategistHooks?: PhaseRunStrategistHooks,
 ): Promise<readonly ScannerResult[]> {
   const allScanners = registry.forPhase(phase);
   const startedAt = Date.now();
@@ -59,7 +75,43 @@ export async function runPhase(
 
       emitter.emit({ type: 'scanner.start', phase, scanner: scanner.name });
       const runStart = Date.now();
-      const result = await runner.runScanner(scanner, context);
+
+      // Plan 018: when --governed AND a strategist is registered for this
+      // scanner, route through the iteration loop. Otherwise fall back to a
+      // single mechanical run (the legacy code path).
+      let result: ScannerResult;
+      if (
+        context.governed &&
+        scanner.strategistName !== undefined &&
+        strategistHooks !== undefined
+      ) {
+        const strategist = strategistHooks.strategistRegistry.forScanner(scanner.strategistName);
+        if (strategist !== undefined) {
+          const outcome = await runScannerIterationLoop({
+            scanner,
+            context,
+            runner,
+            strategist,
+            adapter: strategistHooks.adapter,
+            workspacesRoot: strategistHooks.workspacesRoot,
+          });
+          result = outcome.collapsed;
+          logger.info(
+            {
+              scanId: context.scanId,
+              scanner: scanner.name,
+              iterations: outcome.iterations.length,
+              findings: result.findings.length,
+            },
+            'strategist iteration loop completed',
+          );
+        } else {
+          result = await runner.runScanner(scanner, context);
+        }
+      } else {
+        result = await runner.runScanner(scanner, context);
+      }
+
       const durationMs = Date.now() - runStart;
       emitter.emit({
         type: 'scanner.end',

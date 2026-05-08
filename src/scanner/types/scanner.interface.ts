@@ -45,6 +45,14 @@ export interface ScanContext {
   readonly phase2Findings?: readonly NormalizedFinding[];
   /** Populated by governor phase-evaluator in Phase H, consumed by Shannon in Phase I. */
   readonly governorEscalations?: readonly string[];
+  /**
+   * Per-scanner extra CLI args injected by a strategist's strategize() plan
+   * (plan 018). Keyed by scanner name. Scanner.execute() reads
+   * `context.scannerExtraArgs?.[this.name]` and merges into its default argv
+   * before spawning the Docker container. Empty / absent means use scanner
+   * defaults (mechanical path).
+   */
+  readonly scannerExtraArgs?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface ScannerResult {

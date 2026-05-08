@@ -101,4 +101,32 @@ describe('PipelineService', () => {
     expect(summary.scanId).toBe(context.scanId);
     expect(summary.durationMs).toBeGreaterThanOrEqual(0);
   });
+
+  // Plan 018 — strategist hook regressions.
+  // The constructor accepts 5 optional governor/strategist deps. Tests above
+  // use only the 3-arg form; these confirm the optional path stays sound.
+
+  it('governed=true with no strategist registry collapses to mechanical', async () => {
+    const registry = new ScannerRegistry();
+    registry.register(new FakeScanner('s', 1, false, [makeFinding('s')]));
+    const { service } = makeService(registry);
+    const summary = await service.run({
+      context: { ...context, governed: true },
+    });
+    // Mechanical scanner returned its findings; loop never engaged because
+    // strategistRegistry was undefined at construction.
+    expect(summary.findings).toHaveLength(1);
+    expect(summary.executedPhases).toEqual([1, 2]);
+  });
+
+  it('governed=false skips strategist hooks even when scanners declare strategistName', async () => {
+    class StrategistTaggedScanner extends FakeScanner {
+      public override readonly strategistName = 'tagged';
+    }
+    const registry = new ScannerRegistry();
+    registry.register(new StrategistTaggedScanner('p1', 1, false, [makeFinding('p1')]));
+    const { service } = makeService(registry);
+    const summary = await service.run({ context: { ...context, governed: false } });
+    expect(summary.findings).toHaveLength(1);
+  });
 });

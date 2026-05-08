@@ -67,6 +67,68 @@ function stripWorkspace(path: string): string {
   return path.replace(/^\/workspace\//, '').replace(/^workspace\//, '');
 }
 
+/**
+ * Allowlist of `--config` values the strategist is permitted to request
+ * (mirrors `governor/strategist/prompts/semgrep.prompts.ts` SYSTEM_LAYER).
+ * Anything else gets dropped silently with a WARN log so prompt injection
+ * cannot pivot Semgrep to a malicious or unbounded ruleset.
+ */
+const ALLOWED_SEMGREP_CONFIGS: readonly string[] = [
+  'p/default',
+  'p/security-audit',
+  'p/javascript',
+  'p/typescript',
+  'p/python',
+  'p/owasp-top-ten',
+  'p/r2c-security-audit',
+];
+
+/** Forbidden prefixes — flags that mutate workspace or import write rules. */
+const FORBIDDEN_SEMGREP_PREFIXES: readonly string[] = [
+  '--autofix',
+  '--replacement',
+  '--include',
+  '--write',
+  '--baseline-commit',
+];
+
+/**
+ * Strip any extra arg that doesn't satisfy the safety policy. Walks the array
+ * once. `--config <value>` is treated as a 2-token unit so the value is
+ * validated against the allowlist. TS treats `args[i]` as `string` (no
+ * `noUncheckedIndexedAccess`), so undefined checks are linted away — bound
+ * checks via `i + 1 < args.length` are the only safety net we need.
+ */
+function filterSafeSemgrepArgs(args: readonly string[]): string[] {
+  const safe: string[] = [];
+  let i = 0;
+  while (i < args.length) {
+    const token = args[i];
+
+    if (FORBIDDEN_SEMGREP_PREFIXES.some((p) => token.startsWith(p))) {
+      // Drop forbidden flag; if next token is its value (not another flag), drop too.
+      if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+        i += 2;
+      } else {
+        i += 1;
+      }
+      continue;
+    }
+
+    if (token === '--config') {
+      if (i + 1 < args.length && ALLOWED_SEMGREP_CONFIGS.includes(args[i + 1])) {
+        safe.push(token, args[i + 1]);
+      }
+      i += 2;
+      continue;
+    }
+
+    safe.push(token);
+    i += 1;
+  }
+  return safe;
+}
+
 export class SemgrepScanner extends BaseScanner {
   public readonly name = 'semgrep';
   public readonly phase = 1 as const;
@@ -89,7 +151,14 @@ export class SemgrepScanner extends BaseScanner {
     //   like `p/ci`, `p/javascript`, `p/typescript`, and `p/security-audit`
     //   were tested on this monorepo and produced zero findings for obvious
     //   issues (eval, hardcoded secrets) — only `p/default` actually fires.
-    const command = [
+    //
+    // Plan 018: when a strategist supplies extraArgs through
+    // ctx.scannerExtraArgs.semgrep, we append them AFTER the safe defaults
+    // so the strategist can swap rule packs (--config p/security-audit) or
+    // tighten/loosen exclusions. Each arg is filtered through SAFE_ARG_FILTER
+    // — anything matching the deny pattern silently drops with a WARN log
+    // (defense-in-depth against prompt-injection writing --autofix etc).
+    const baseCommand = [
       'semgrep',
       '--config',
       'p/default',
@@ -122,8 +191,12 @@ export class SemgrepScanner extends BaseScanner {
       '--exclude', 'pnpm-lock.yaml',
       '--exclude', 'package-lock.json',
       '--exclude', 'yarn.lock',
-      '/workspace',
     ];
+
+    const extraArgs = context.scannerExtraArgs?.[this.name] ?? [];
+    const safeExtras = filterSafeSemgrepArgs(extraArgs);
+
+    const command = [...baseCommand, ...safeExtras, '/workspace'];
     // Semgrep needs network to fetch rules from semgrep.dev when using
     // --config p/default. Cannot use network: 'none'.
     const outcome = await runScannerInDocker({

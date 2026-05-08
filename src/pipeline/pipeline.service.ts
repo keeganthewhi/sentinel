@@ -22,10 +22,10 @@
  *     service treats both paths identically.
  */
 
-import { Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { runPhase } from './phases/phase-runner.js';
+import { runPhase, type PhaseRunStrategistHooks } from './phases/phase-runner.js';
 import { runPhaseThree } from './phases/phase-three-exploit.js';
 import { InMemoryPipelineRunner } from './in-memory.runner.js';
 import { ScannerRegistry } from '../scanner/scanner.registry.js';
@@ -36,6 +36,9 @@ import { SubfinderScanner } from '../scanner/scanners/subfinder.scanner.js';
 import { PlanGenerator } from '../governor/plan-generator.js';
 import { PhaseEvaluator } from '../governor/phase-evaluator.js';
 import { ReportWriter } from '../governor/report-writer.js';
+import { AGENT_ADAPTER } from '../governor/governor.module.js';
+import type { AgentAdapter } from '../governor/agent-adapter.js';
+import { StrategistRegistry } from '../governor/strategist/strategist-registry.js';
 import {
   prepareWorkspaceVolume,
   removeWorkspaceVolume,
@@ -72,7 +75,24 @@ export class PipelineService {
     @Optional() private readonly planGenerator?: PlanGenerator,
     @Optional() private readonly phaseEvaluator?: PhaseEvaluator,
     @Optional() private readonly reportWriter?: ReportWriter,
+    @Optional() private readonly strategistRegistry?: StrategistRegistry,
+    @Optional() @Inject(AGENT_ADAPTER) private readonly agentAdapter?: AgentAdapter,
   ) {}
+
+  /**
+   * Build the strategist hooks bundle that the phase runner needs to route
+   * scanners through the iteration loop. Returns undefined when any required
+   * piece is missing, which collapses every scanner to the legacy mechanical
+   * path (CLAUDE.md Critical Invariant #7 — mechanical fallback).
+   */
+  private buildStrategistHooks(workspacesRoot: string): PhaseRunStrategistHooks | undefined {
+    if (this.strategistRegistry === undefined || this.agentAdapter === undefined) return undefined;
+    return {
+      strategistRegistry: this.strategistRegistry,
+      adapter: this.agentAdapter,
+      workspacesRoot,
+    };
+  }
 
   /** Override the runner at call time — used by the CLI when Redis is available. */
   public async run(options: PipelineRunOptions, runner?: IPipelineRunner): Promise<ScanSummary> {
@@ -196,8 +216,19 @@ export class PipelineService {
     let decision2Promise: Promise<EvaluationOutcome> | null = null;
     let phase1Findings: NormalizedFinding[] = [];
 
+    const strategistHooks = context.governed
+      ? this.buildStrategistHooks('workspaces')
+      : undefined;
+
     if (selectedPhases.includes(1)) {
-      const phase1Results = await runPhase(1, this.registry, activeRunner, context, this.emitter);
+      const phase1Results = await runPhase(
+        1,
+        this.registry,
+        activeRunner,
+        context,
+        this.emitter,
+        strategistHooks,
+      );
       allResults.push(...phase1Results);
 
       // Enrich context from subfinder / httpx results.
@@ -233,7 +264,14 @@ export class PipelineService {
         ...context,
         phase1Findings: [...phase1Findings],
       };
-      const phase2Results = await runPhase(2, this.registry, activeRunner, phase2Context, this.emitter);
+      const phase2Results = await runPhase(
+        2,
+        this.registry,
+        activeRunner,
+        phase2Context,
+        this.emitter,
+        strategistHooks,
+      );
       allResults.push(...phase2Results);
       phase2Findings = [];
       for (const r of phase2Results) phase2Findings.push(...r.findings);
