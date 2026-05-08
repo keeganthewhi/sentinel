@@ -120,3 +120,15 @@ export class DockerNotRunningError extends SentinelError {
   public readonly remediation =
     'Start Docker Desktop (or `sudo systemctl start docker`) and re-run `./sentinel doctor`.';
 }
+
+/**
+ * Per-tool strategist (governor sibling) failed: adapter timeout, malformed
+ * JSON response, schema validation failure, or any runtime exception inside
+ * `strategize` / `replay` / `narrate`. The pipeline must fall back to the
+ * mechanical scanner default per CLAUDE.md Critical Invariant #7.
+ */
+export class StrategistFailureError extends SentinelError {
+  public readonly code = 'STRATEGIST_FAILURE';
+  public readonly remediation =
+    'Falling back to mechanical scanner default. Re-run with --verbose to capture the raw strategist response.';
+}

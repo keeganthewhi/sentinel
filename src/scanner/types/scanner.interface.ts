@@ -74,6 +74,13 @@ export abstract class BaseScanner {
   public abstract readonly name: string;
   public abstract readonly phase: 1 | 2 | 3;
   public abstract readonly requiresUrl: boolean;
+  /**
+   * When set, the pipeline (plan 018) consults the named per-tool AI
+   * strategist before execute() and after each iteration. Plan 017 only
+   * adds the metadata reference; the strategist loop is plumbed in plan 018.
+   * Scanners without `strategistName` continue running mechanically as today.
+   */
+  public readonly strategistName?: string;
 
   protected executor: DockerExecutor | undefined;
 

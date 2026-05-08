@@ -71,6 +71,7 @@ export class SemgrepScanner extends BaseScanner {
   public readonly name = 'semgrep';
   public readonly phase = 1 as const;
   public readonly requiresUrl = false;
+  public override readonly strategistName = 'semgrep';
 
   public async execute(context: ScanContext): Promise<ScannerResult> {
     // Semgrep exits 0 = no findings, 1 = findings, 2 = error.
