@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { rootLogger } from '../../common/logger.js';
 import { normalizeSeverity } from '../../correlation/severity-normalizer.js';
 import { CorrelationService } from '../../correlation/correlation.service.js';
+import { VerdictService } from '../../correlation/verdict.service.js';
 import { PipelineService } from '../../pipeline/pipeline.service.js';
 import { MarkdownRenderer } from '../../report/renderers/markdown.renderer.js';
 import { JsonRenderer } from '../../report/renderers/json.renderer.js';
@@ -37,6 +38,8 @@ export interface StartOptions {
   readonly phases?: readonly (1 | 2 | 3)[];
   readonly verbose?: boolean;
   readonly workspacesRoot?: string;
+  /** When true, exit code becomes 1 on a FAIL verdict (plan 020). */
+  readonly requireClean?: boolean;
 }
 
 export interface StartDeps {
@@ -44,6 +47,7 @@ export interface StartDeps {
   readonly correlation: CorrelationService;
   readonly markdown: MarkdownRenderer;
   readonly json: JsonRenderer;
+  readonly verdict: VerdictService;
 }
 
 function parsePhases(raw: string | undefined): readonly (1 | 2 | 3)[] | undefined {
@@ -148,11 +152,24 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     const correlated = deps.correlation.correlate(summary.findings);
     const normalized = normalizeSeverity(correlated);
 
+    const verdict = deps.verdict.compute(normalized);
+    rootLogger.info(
+      {
+        verdict: verdict.result,
+        findingCount: verdict.findingCount,
+        scanId,
+      },
+      verdict.result === 'PASS'
+        ? `Verdict: PASS (${verdict.findingCount} findings)`
+        : `Verdict: FAIL (${verdict.findingCount} findings)`,
+    );
+
     const reportInput = {
       scanId,
       findings: normalized,
       durationMs: summary.durationMs,
       targetRepo: repoAbs,
+      verdict,
       ...(options.url !== undefined && { targetUrl: options.url }),
     };
     // Prefer the governor's AI-authored markdown (if present and validated),
@@ -238,6 +255,13 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
       `scan complete — ${normalized.length} findings, ${summary.durationMs}ms${summary.aiAuthoredMarkdown !== undefined ? ' (AI-authored report)' : ''}`,
     );
 
+    // Plan 020 — `--require-clean` flips a FAIL verdict into exit 1 for CI
+    // gates. Without the flag, exit code preserves the legacy contract:
+    // 1 on non-empty findings, 0 on clean. Either path produces the same
+    // verdict heading + JSON field in the report regardless.
+    if (options.requireClean === true && verdict.result === 'FAIL') {
+      return 1;
+    }
     return normalized.length > 0 ? 1 : 0;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -370,6 +394,7 @@ export async function runStartCommand(options: StartOptions): Promise<number> {
       correlation: app.get(CorrelationService),
       markdown: app.get(MarkdownRenderer),
       json: app.get(JsonRenderer),
+      verdict: app.get(VerdictService),
     };
     return await startCommand(options, deps);
   } catch (err) {

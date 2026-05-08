@@ -7,6 +7,7 @@
 
 import { Injectable } from '@nestjs/common';
 import type { NormalizedFinding, Severity } from '../../scanner/types/finding.interface.js';
+import type { Verdict } from '../../correlation/verdict.service.js';
 import type { ReportInput } from './markdown.renderer.js';
 
 export interface JsonReport {
@@ -14,6 +15,8 @@ export interface JsonReport {
   readonly targetRepo: string;
   readonly targetUrl?: string;
   readonly durationMs: number;
+  /** Plan 020 — boolean verdict surfaced as a top-level field. */
+  readonly verdict?: Verdict;
   readonly summary: {
     readonly total: number;
     readonly bySeverity: Record<Severity, number>;
@@ -38,6 +41,7 @@ export class JsonRenderer {
       targetRepo: input.targetRepo,
       ...(input.targetUrl !== undefined && { targetUrl: input.targetUrl }),
       durationMs: input.durationMs,
+      ...(input.verdict !== undefined && { verdict: input.verdict }),
       summary: {
         total: input.findings.length,
         bySeverity,

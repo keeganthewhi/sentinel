@@ -12,6 +12,7 @@
 
 import { Injectable } from '@nestjs/common';
 import type { NormalizedFinding, Severity, FindingCategory } from '../../scanner/types/finding.interface.js';
+import type { Verdict } from '../../correlation/verdict.service.js';
 
 export interface ReportInput {
   readonly scanId: string;
@@ -19,6 +20,8 @@ export interface ReportInput {
   readonly durationMs: number;
   readonly targetRepo: string;
   readonly targetUrl?: string;
+  /** Plan 020 — boolean PASS / FAIL verdict surfaced at the top of the report. */
+  readonly verdict?: Verdict;
 }
 
 const SEVERITIES: readonly Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
@@ -75,6 +78,16 @@ export class MarkdownRenderer {
     const lines: string[] = [];
     lines.push(`# Sentinel Scan Report`);
     lines.push('');
+    if (input.verdict !== undefined) {
+      // Plan 020 — boolean verdict heading at the top of the report.
+      const badge = input.verdict.result === 'PASS' ? 'PASS' : 'FAIL';
+      lines.push(
+        input.verdict.result === 'PASS'
+          ? `## Verdict: ${badge}`
+          : `## Verdict: ${badge} — ${input.verdict.findingCount} finding(s) require attention`,
+      );
+      lines.push('');
+    }
     lines.push(`- **Scan ID**: \`${input.scanId}\``);
     lines.push(`- **Target repo**: \`${escapeMarkdown(input.targetRepo)}\``);
     if (input.targetUrl !== undefined) {

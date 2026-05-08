@@ -33,6 +33,7 @@ interface StartCliFlags {
   readonly governed?: boolean;
   readonly phases?: string;
   readonly verbose?: boolean;
+  readonly requireClean?: boolean;
 }
 
 interface HistoryCliFlags {
@@ -67,6 +68,7 @@ export function buildProgram(): Command {
     .option('--governed', 'enable AI mode: governor plan/evaluation/report + Phase 3 Shannon exploitation', false)
     .option('--phases <list>', 'comma-separated phase numbers — advanced escape hatch (e.g. 1,2 or 1,2,3). Governed mode defaults to 1,2,3; non-governed to 1,2.')
     .option('--verbose', 'verbose logging', false)
+    .option('--require-clean', 'exit non-zero (1) when the verdict is FAIL — for CI gates', false)
     .action(async (flags: StartCliFlags) => {
       try {
         const phases = parsePhasesFlag(flags.phases);
@@ -77,6 +79,7 @@ export function buildProgram(): Command {
           governed: flags.governed === true,
           phases,
           verbose: flags.verbose === true,
+          requireClean: flags.requireClean === true,
         });
         process.exitCode = code;
       } catch (err) {
