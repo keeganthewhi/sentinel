@@ -13,6 +13,7 @@ export default tseslint.config(
       'data/**',
       'prisma/migrations/**',
       'tools/**',
+      'apps/**',
       '**/*.d.ts',
       'eslint.config.mjs',
       'vitest.config.ts',

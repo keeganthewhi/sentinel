@@ -25,6 +25,7 @@ import { VerdictService } from '../../correlation/verdict.service.js';
 import { PipelineService } from '../../pipeline/pipeline.service.js';
 import { MarkdownRenderer } from '../../report/renderers/markdown.renderer.js';
 import { JsonRenderer } from '../../report/renderers/json.renderer.js';
+import { RedisEventPublisher } from '../../sync/redis-event-publisher.js';
 import { discoverOpenApiSpec } from '../../scanner/scanners/schemathesis.scanner.js';
 import type { ScanContext } from '../../scanner/types/scanner.interface.js';
 import type { NormalizedFinding } from '../../scanner/types/finding.interface.js';
@@ -48,6 +49,14 @@ export interface StartDeps {
   readonly markdown: MarkdownRenderer;
   readonly json: JsonRenderer;
   readonly verdict: VerdictService;
+  /**
+   * Optional dashboard event publisher. When the SyncModule is wired (the
+   * normal CLI path) and a Redis URL is configured, this relays
+   * ProgressEmitter events to the `sentinel:events` channel so the local
+   * dashboard can stream them. Missing publisher = no live stream; the
+   * scan still runs (mechanical-first, CLAUDE.md Critical Invariant #2).
+   */
+  readonly publisher?: RedisEventPublisher;
 }
 
 function parsePhases(raw: string | undefined): readonly (1 | 2 | 3)[] | undefined {
@@ -133,6 +142,15 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
     { scanId, repo: repoAbs, url: options.url, governed: context.governed, phases: options.phases },
     'starting scan',
   );
+
+  deps.publisher?.start();
+  deps.publisher?.publish({
+    kind: 'scan-started',
+    scanId,
+    targetRepo: repoAbs,
+    governed: context.governed,
+    at: Date.now(),
+  });
 
   try {
     // `--governed` is the single AI-mode switch. It turns on every AI
@@ -265,6 +283,15 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
       `scan complete — ${normalized.length} findings, ${summary.durationMs}ms${summary.aiAuthoredMarkdown !== undefined ? ' (AI-authored report)' : ''}`,
     );
 
+    deps.publisher?.publish({
+      kind: 'scan-ended',
+      scanId,
+      durationMs: summary.durationMs,
+      findingCount: normalized.length,
+      at: Date.now(),
+    });
+    await deps.publisher?.stop();
+
     // Plan 020 — `--require-clean` flips a FAIL verdict into exit 1 for CI
     // gates. Without the flag, exit code preserves the legacy contract:
     // 1 on non-empty findings, 0 on clean. Either path produces the same
@@ -276,6 +303,7 @@ export async function startCommand(options: StartOptions, deps: StartDeps): Prom
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     rootLogger.error({ scanId, err: message }, 'scan failed');
+    await deps.publisher?.stop();
     // Classify errors into the exit code taxonomy from CLAUDE.md:
     //   2 = prerequisite missing (Docker, scanner image)
     //   3 = invalid arguments / config
@@ -437,12 +465,22 @@ export async function runStartCommand(options: StartOptions): Promise<number> {
       logger: false,
     });
 
+    let publisher: RedisEventPublisher | undefined;
+    try {
+      publisher = app.get(RedisEventPublisher);
+    } catch {
+      // SyncModule not wired or publisher unavailable — dashboard live
+      // stream stays offline; the scan still runs (mechanical-first).
+      publisher = undefined;
+    }
+
     const deps: StartDeps = {
       pipeline: app.get(PipelineService),
       correlation: app.get(CorrelationService),
       markdown: app.get(MarkdownRenderer),
       json: app.get(JsonRenderer),
       verdict: app.get(VerdictService),
+      ...(publisher !== undefined && { publisher }),
     };
     return await startCommand(options, deps);
   } catch (err) {

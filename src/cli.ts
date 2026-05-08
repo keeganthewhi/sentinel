@@ -23,6 +23,7 @@ import { doctorCommand } from './cli/commands/doctor.command.js';
 import { stopCommand } from './cli/commands/stop.command.js';
 import { cleanCommand } from './cli/commands/clean.command.js';
 import { parsePhasesFlag, runStartCommand } from './cli/commands/start.command.js';
+import { dashboardCommand } from './cli/commands/dashboard.command.js';
 
 const VERSION = '0.1.0';
 
@@ -47,6 +48,11 @@ interface ReportCliFlags {
 
 interface CleanCliFlags {
   readonly yes?: boolean;
+}
+
+interface DashboardCliFlags {
+  readonly port?: string;
+  readonly bind?: string;
 }
 
 export function buildProgram(): Command {
@@ -144,6 +150,25 @@ export function buildProgram(): Command {
     .option('--yes', 'skip confirmation prompt', false)
     .action(async (flags: CleanCliFlags) => {
       const code = await cleanCommand({ yes: flags.yes === true });
+      process.exitCode = code;
+    });
+
+  program
+    .command('dashboard')
+    .description('start the local-only Next.js dashboard at http://127.0.0.1:7777')
+    .option('--port <n>', 'port to bind (default 7777)')
+    .option('--bind <host>', 'host to bind (default 127.0.0.1; non-loopback prints a warning)')
+    .action(async (flags: DashboardCliFlags) => {
+      const port = flags.port !== undefined ? Number(flags.port) : undefined;
+      if (port !== undefined && (Number.isNaN(port) || port <= 0 || port > 65535)) {
+        rootLogger.error({ port: flags.port }, 'invalid --port value');
+        process.exitCode = 3;
+        return;
+      }
+      const code = await dashboardCommand({
+        ...(port !== undefined && { port }),
+        ...(flags.bind !== undefined && { bind: flags.bind }),
+      });
       process.exitCode = code;
     });
 

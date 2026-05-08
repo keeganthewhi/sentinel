@@ -4,6 +4,7 @@ import { ScannerModule } from './scanner/scanner.module.js';
 import { PipelineModule } from './pipeline/pipeline.module.js';
 import { CorrelationModule } from './correlation/correlation.module.js';
 import { ReportModule } from './report/report.module.js';
+import { SyncModule } from './sync/sync.module.js';
 
 /**
  * Root NestJS module — wires every runtime feature module so that the
@@ -19,7 +20,7 @@ import { ReportModule } from './report/report.module.js';
  *     ad-hoc when the flag is set.
  */
 @Module({
-  imports: [ScannerModule, PipelineModule, CorrelationModule, ReportModule],
+  imports: [ScannerModule, PipelineModule, CorrelationModule, ReportModule, SyncModule],
   providers: [ConfigService],
   exports: [ConfigService],
 })

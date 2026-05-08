@@ -25,6 +25,12 @@ dist/
 build/
 *.tsbuildinfo
 
+# Dashboard build artifacts (apps/dashboard is a separate workspace member)
+apps/dashboard/.next/
+apps/dashboard/node_modules/
+apps/dashboard/next-env.d.ts
+apps/dashboard/tsconfig.tsbuildinfo
+
 # Runtime state
 data/
 workspaces/

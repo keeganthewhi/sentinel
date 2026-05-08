@@ -2,10 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { buildProgram } from '../cli.js';
 
 describe('Sentinel CLI program', () => {
-  it('registers all 7 subcommands', () => {
+  it('registers all 8 subcommands', () => {
     const program = buildProgram();
     const names = program.commands.map((c) => c.name()).sort();
-    expect(names).toEqual(['clean', 'diff', 'doctor', 'history', 'report', 'start', 'stop']);
+    expect(names).toEqual([
+      'clean',
+      'dashboard',
+      'diff',
+      'doctor',
+      'history',
+      'report',
+      'start',
+      'stop',
+    ]);
+  });
+
+  it('dashboard command supports --port and --bind flags', () => {
+    const program = buildProgram();
+    const dashCmd = program.commands.find((c) => c.name() === 'dashboard');
+    expect(dashCmd).toBeDefined();
+    expect(dashCmd?.options.find((o) => o.long === '--port')).toBeDefined();
+    expect(dashCmd?.options.find((o) => o.long === '--bind')).toBeDefined();
   });
 
   it('--version emits the package version (0.1.0)', () => {
